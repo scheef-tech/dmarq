@@ -49,9 +49,13 @@ class PersistentReportStore:
             # Get or create domain
             domain = db.query(Domain).filter(Domain.name == domain_name).first()
             if not domain:
+                # Extract policy string - parser returns dict like {'p': 'quarantine', 'sp': '...', 'pct': '...'}
+                policy_data = report.get("policy")
+                policy_str = policy_data.get("p", "none") if isinstance(policy_data, dict) else policy_data
+
                 domain = Domain(
                     name=domain_name,
-                    dmarc_policy=report.get("policy"),
+                    dmarc_policy=policy_str,
                     active=True,
                     verified=True
                 )
@@ -70,13 +74,17 @@ class PersistentReportStore:
                 return
 
             # Create report
+            # Extract policy string from dict if needed
+            policy_data = report.get("policy")
+            report_policy_str = policy_data.get("p", "none") if isinstance(policy_data, dict) else policy_data
+
             db_report = DMARCReport(
                 domain_id=domain.id,
                 report_id=report_id,
                 org_name=report.get("org_name", "Unknown"),
-                begin_date=report.get("begin_date", 0),
-                end_date=report.get("end_date", 0),
-                policy=report.get("policy"),
+                begin_date=report.get("begin_timestamp", 0),  # Use timestamp, not ISO string
+                end_date=report.get("end_timestamp", 0),      # Use timestamp, not ISO string
+                policy=report_policy_str,
                 processed_at=datetime.utcnow()
             )
             db.add(db_report)
@@ -89,15 +97,17 @@ class PersistentReportStore:
                     source_ip=record.get("source_ip", "unknown"),
                     count=record.get("count", 0),
                     disposition=record.get("disposition", "none"),
-                    dkim=record.get("dkim", "unknown"),
-                    spf=record.get("spf", "unknown"),
+                    dkim=record.get("dkim_result", "unknown"),
+                    spf=record.get("spf_result", "unknown"),
                     header_from=record.get("header_from")
                 )
                 db.add(db_record)
 
             # Update domain policy if changed
             if report.get("policy"):
-                domain.dmarc_policy = report.get("policy")
+                policy_data = report.get("policy")
+                policy_str = policy_data.get("p", "none") if isinstance(policy_data, dict) else policy_data
+                domain.dmarc_policy = policy_str
 
             db.commit()
         except Exception as e:
