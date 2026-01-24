@@ -26,18 +26,19 @@ last_check_time = None
 async def scheduled_imap_polling():
     """Background task for periodically checking IMAP for new DMARC reports"""
     global last_check_time
-    
+
     try:
         # How often to check for emails (in seconds)
         check_interval = 3600  # Default: 1 hour
-        
+
         while True:
             logger.info("Starting scheduled IMAP polling for DMARC reports")
-            
+
             try:
                 # Create IMAP client and fetch reports
+                # Run in thread pool to avoid blocking the event loop
                 imap_client = IMAPClient(delete_emails=False)
-                results = imap_client.fetch_reports(days=9999)
+                results = await asyncio.to_thread(imap_client.fetch_reports, days=9999)
                 
                 # Update last check time
                 last_check_time = datetime.now()
