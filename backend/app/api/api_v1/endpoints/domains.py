@@ -2,8 +2,16 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, status, Path, Query
 from pydantic import BaseModel
+from sqlalchemy import func
 
+# Import ReportStore first - it handles model import ordering
 from app.services.persistent_store import ReportStore
+from app.services.recommendations import get_recommendation_engine
+from app.services.dns_lookup import get_dns_service
+from app.core.database import SessionLocal
+# Now safe to import models (already loaded by ReportStore)
+from app.models.domain import Domain
+from app.models.report import DMARCReport, ReportRecord
 
 router = APIRouter()
 
@@ -30,10 +38,14 @@ class DNSRecordResponse(BaseModel):
     """DNS record information for a domain"""
     dmarc: bool
     dmarcRecord: Optional[str] = None
+    dmarcPolicy: Optional[str] = None
+    dmarcError: Optional[str] = None
     spf: bool
     spfRecord: Optional[str] = None
+    spfError: Optional[str] = None
     dkim: bool
     dkimSelectors: Optional[str] = None
+    lookupTime: Optional[str] = None
 
 class TimelinePoint(BaseModel):
     """Data point for compliance timeline"""
@@ -68,6 +80,27 @@ class DomainSourcesResponse(BaseModel):
     """Domain sending sources"""
     sources: List[SourceEntry]
 
+class RecommendationInfo(BaseModel):
+    """Recommendation for a domain"""
+    type: str
+    priority: str
+    title: str
+    description: str
+    action: Optional[str] = None
+
+
+class CriticalIssue(BaseModel):
+    """Critical issue requiring attention"""
+    domain: str
+    type: str
+    priority: str
+    title: str
+    description: str
+    action: Optional[str] = None
+    failed_count: int = 0
+    pass_rate: Optional[float] = None
+
+
 class DomainSummaryResponse(BaseModel):
     """Domain summary for dashboard"""
     total_domains: int
@@ -75,53 +108,123 @@ class DomainSummaryResponse(BaseModel):
     overall_pass_rate: float
     reports_processed: int
     domains: List[Dict[str, Any]]
+    critical_issues: List[CriticalIssue] = []
 
 @router.get("/summary", response_model=DomainSummaryResponse)
 async def get_domains_summary():
     """
     Get summary statistics for all domains, formatted for the dashboard.
+    Now includes ALL domains from database, not just those with reports.
     """
     store = ReportStore.get_instance()
-    domains = store.get_domains()
-    summaries = store.get_all_domain_summaries()
-    
-    # Calculate overall statistics
-    total_domains = len(domains)
-    total_emails = 0
-    total_passed = 0
-    total_reports = 0
-    
-    domains_list = []
-    
-    for domain_name in domains:
-        summary = summaries.get(domain_name, {})
-        total_emails += summary.get("total_count", 0)
-        total_passed += summary.get("passed_count", 0)
-        total_reports += summary.get("reports_processed", 0)
-        
-        # Format domain data for frontend
-        domains_list.append({
-            "id": domain_name,  # Using the domain name as ID for now
-            "domain_name": domain_name,
-            "total_emails": summary.get("total_count", 0),
-            "passed_count": summary.get("passed_count", 0),
-            "failed_count": summary.get("failed_count", 0),
-            "pass_rate": summary.get("compliance_rate", 0),
-            "report_count": summary.get("reports_processed", 0)
-        })
-    
-    # Calculate overall pass rate
-    overall_pass_rate = 0
-    if total_emails > 0:
-        overall_pass_rate = round((total_passed / total_emails) * 100, 1)
-    
-    return DomainSummaryResponse(
-        total_domains=total_domains,
-        total_emails=total_emails,
-        overall_pass_rate=overall_pass_rate,
-        reports_processed=total_reports,
-        domains=domains_list
-    )
+    recommendation_engine = get_recommendation_engine()
+
+    # Get all domains from database (including those without reports)
+    db = SessionLocal()
+    try:
+        all_db_domains = db.query(Domain).all()
+
+        # Build a map of domain stats from report data
+        summaries = store.get_all_domain_summaries()
+
+        # Calculate overall statistics
+        total_emails = 0
+        total_passed = 0
+        total_reports = 0
+
+        domains_list = []
+        domains_for_recommendations = []
+
+        for domain in all_db_domains:
+            domain_name = domain.name
+            summary = summaries.get(domain_name, {})
+
+            email_count = summary.get("total_count", 0)
+            passed_count = summary.get("passed_count", 0)
+            failed_count = summary.get("failed_count", 0)
+            report_count = summary.get("reports_processed", 0)
+            pass_rate = summary.get("compliance_rate", 0) if email_count > 0 else None
+
+            total_emails += email_count
+            total_passed += passed_count
+            total_reports += report_count
+
+            # Get recommendation for this domain
+            rec = recommendation_engine.generate_recommendation(
+                domain_name=domain_name,
+                dmarc_policy=domain.dmarc_policy,
+                pass_rate=pass_rate,
+                total_emails=email_count,
+                report_count=report_count,
+                failed_count=failed_count,
+                is_active=domain.active if domain.active is not None else True,
+            )
+
+            domain_data = {
+                "id": domain_name,
+                "domain_name": domain_name,
+                "total_emails": email_count,
+                "passed_count": passed_count,
+                "failed_count": failed_count,
+                "pass_rate": pass_rate,
+                "report_count": report_count,
+                "active": domain.active if domain.active is not None else True,
+                "dmarc_policy": domain.dmarc_policy or "none",
+                "cloudflare_account": domain.cloudflare_account,
+                "recommendation": {
+                    "type": rec.type.value,
+                    "priority": rec.priority.value,
+                    "title": rec.title,
+                    "description": rec.description,
+                    "action": rec.action
+                }
+            }
+
+            domains_list.append(domain_data)
+            domains_for_recommendations.append({
+                "domain_name": domain_name,
+                "dmarc_policy": domain.dmarc_policy,
+                "pass_rate": pass_rate,
+                "total_emails": email_count,
+                "report_count": report_count,
+                "failed_count": failed_count,
+                "active": domain.active if domain.active is not None else True
+            })
+
+        # Sort domains: active first, then by report count descending
+        domains_list.sort(key=lambda d: (not d.get("active", True), -d.get("report_count", 0)))
+
+        # Get critical issues
+        critical_issues_data = recommendation_engine.get_critical_issues(domains_for_recommendations)
+        critical_issues = [
+            CriticalIssue(
+                domain=issue["domain"],
+                type=issue["type"],
+                priority=issue["priority"],
+                title=issue["title"],
+                description=issue["description"],
+                action=issue.get("action"),
+                failed_count=issue.get("failed_count", 0),
+                pass_rate=issue.get("pass_rate")
+            )
+            for issue in critical_issues_data
+        ]
+
+        # Calculate overall pass rate
+        overall_pass_rate = 0
+        if total_emails > 0:
+            overall_pass_rate = round((total_passed / total_emails) * 100, 1)
+
+        return DomainSummaryResponse(
+            total_domains=len(all_db_domains),
+            total_emails=total_emails,
+            overall_pass_rate=overall_pass_rate,
+            reports_processed=total_reports,
+            domains=domains_list,
+            critical_issues=critical_issues
+        )
+    finally:
+        db.close()
 
 @router.get("/domains", response_model=List[DomainResponse])
 async def read_domains():
@@ -203,29 +306,51 @@ async def get_domain_stats(domain_id: str = Path(..., title="The domain ID or na
     )
 
 @router.get("/{domain_id}/dns", response_model=DNSRecordResponse)
-async def get_domain_dns_records(domain_id: str = Path(..., title="The domain ID or name")):
+async def get_domain_dns_records(
+    domain_id: str = Path(..., title="The domain ID or name"),
+    check_dkim: bool = Query(True, description="Whether to check for DKIM selectors (slower)")
+):
     """
-    Get DNS records for a specific domain. For Milestone 1, 
-    this returns mock data since DNS integration is part of a future milestone.
+    Get DNS records for a specific domain using real DNS lookups.
+
+    Performs live DNS queries for:
+    - DMARC record (_dmarc.domain.com TXT)
+    - SPF record (domain.com TXT)
+    - DKIM selectors (checks common selectors if check_dkim=true)
+
+    Results are cached for 15 minutes.
     """
-    store = ReportStore.get_instance()
-    domains = store.get_domains()
-    
-    if domain_id not in domains:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Domain not found",
-        )
-    
-    # For Milestone 1, return mock DNS record data
-    # In a future milestone, this will be replaced with actual DNS lookups
+    # Check if domain exists in our database
+    db = SessionLocal()
+    try:
+        domain = db.query(Domain).filter(Domain.name == domain_id).first()
+        if not domain:
+            # Also check the report store for domains discovered via reports
+            store = ReportStore.get_instance()
+            domains = store.get_domains()
+            if domain_id not in domains:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Domain not found",
+                )
+    finally:
+        db.close()
+
+    # Perform real DNS lookups
+    dns_service = get_dns_service()
+    dns_info = dns_service.lookup_domain(domain_id, check_dkim=check_dkim)
+
     return DNSRecordResponse(
-        dmarc=True,
-        dmarcRecord="v=DMARC1; p=none; rua=mailto:dmarc@example.com; ruf=mailto:forensic@example.com; pct=100",
-        spf=True,
-        spfRecord="v=spf1 include:_spf.google.com include:spf.protection.outlook.com -all",
-        dkim=True,
-        dkimSelectors="selector1, selector2"
+        dmarc=dns_info.dmarc.exists,
+        dmarcRecord=dns_info.dmarc.record,
+        dmarcPolicy=dns_info.dmarc.policy,
+        dmarcError=dns_info.dmarc.error,
+        spf=dns_info.spf.exists,
+        spfRecord=dns_info.spf.record,
+        spfError=dns_info.spf.error,
+        dkim=len(dns_info.dkim_selectors) > 0,
+        dkimSelectors=", ".join(dns_info.dkim_selectors) if dns_info.dkim_selectors else None,
+        lookupTime=dns_info.lookup_time
     )
 
 @router.get("/{domain_id}/reports", response_model=DomainReportsResponse)

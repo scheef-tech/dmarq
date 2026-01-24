@@ -1,0 +1,317 @@
+{% extends "layouts/base.html" %}
+{% from "components/ui/card.html" import card, card_header, card_title, card_description, card_content, card_footer %}
+{% from "components/ui/button.html" import button, button_link %}
+{% from "components/ui/table.html" import table, thead, tbody, tr, th, td %}
+
+{% block title %}DMARQ - Report Details{% endblock %}
+
+{% block content %}
+<div class="container mx-auto py-4" x-data="reportDetailApp('{{ report_id }}')">
+    <nav class="mb-4 text-sm">
+        <ol class="flex items-center space-x-2">
+            <li><a href="/" class="hover:text-primary">Dashboard</a></li>
+            <li><span class="text-muted-foreground px-2">/</span></li>
+            <li><a href="/domains" class="hover:text-primary">Domains</a></li>
+            <li><span class="text-muted-foreground px-2">/</span></li>
+            <li><a :href="'/domain/' + report.domain" class="hover:text-primary" x-text="report.domain || 'Loading...'"></a></li>
+            <li><span class="text-muted-foreground px-2">/</span></li>
+            <li><span class="font-medium">Report</span></li>
+        </ol>
+    </nav>
+
+    <!-- Loading State -->
+    <div x-show="loading" class="flex justify-center items-center py-12">
+        <div class="loading loading-spinner loading-lg"></div>
+    </div>
+
+    <!-- Error State -->
+    <div x-show="error && !loading" class="text-center py-12">
+        <div class="text-red-500 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mx-auto"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+        </div>
+        <h2 class="text-xl font-semibold mb-2">Report Not Found</h2>
+        <p class="text-muted-foreground mb-4" x-text="error"></p>
+        <a href="/" class="btn btn-primary">Return to Dashboard</a>
+    </div>
+
+    <!-- Report Content -->
+    <div x-show="!loading && !error" class="grid grid-cols-1 gap-6">
+        <!-- Report Header -->
+        <div class="flex justify-between items-start">
+            <div>
+                <h1 class="text-2xl font-bold mb-1">DMARC Report from <span x-text="report.org_name"></span></h1>
+                <p class="text-muted-foreground">
+                    Report period: <span x-text="formatDate(report.begin_date)"></span> - <span x-text="formatDate(report.end_date)"></span>
+                </p>
+            </div>
+            <div class="flex space-x-2">
+                <a :href="'/domain/' + report.domain" class="btn btn-outline btn-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><path d="m12 19-7-7 7-7"></path><path d="M19 12H5"></path></svg>
+                    Back to Domain
+                </a>
+            </div>
+        </div>
+
+        <!-- Report Stats -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- Total Emails Card -->
+            {% call card() %}
+                {% call card_header() %}
+                    <div class="flex items-center justify-between">
+                        {% call card_title() %}Total Emails{% endcall %}
+                        <div class="p-2 bg-primary/10 rounded-full">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-primary"><rect width="20" height="16" x="2" y="4" rx="2"></rect><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path></svg>
+                        </div>
+                    </div>
+                {% endcall %}
+                {% call card_content() %}
+                    <div class="stat-card">
+                        <div class="stat-value" x-text="report.total_count">-</div>
+                        <p class="stat-description">Emails in this report</p>
+                    </div>
+                {% endcall %}
+            {% endcall %}
+
+            <!-- Pass Rate Card -->
+            {% call card() %}
+                {% call card_header() %}
+                    <div class="flex items-center justify-between">
+                        {% call card_title() %}Pass Rate{% endcall %}
+                        <div class="p-2 bg-green-500/10 rounded-full">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-500"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                        </div>
+                    </div>
+                {% endcall %}
+                {% call card_content() %}
+                    <div class="stat-card">
+                        <div class="stat-value" :class="getPassRateClass(report.pass_rate)" x-text="report.pass_rate + '%'">-</div>
+                        <p class="stat-description">DMARC compliance</p>
+                    </div>
+                {% endcall %}
+            {% endcall %}
+
+            <!-- Failed Emails Card -->
+            {% call card() %}
+                {% call card_header() %}
+                    <div class="flex items-center justify-between">
+                        {% call card_title() %}Failed{% endcall %}
+                        <div class="p-2 bg-red-500/10 rounded-full">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-500"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+                        </div>
+                    </div>
+                {% endcall %}
+                {% call card_content() %}
+                    <div class="stat-card">
+                        <div class="stat-value text-red-500" x-text="report.failed_count">-</div>
+                        <p class="stat-description">Emails failing DMARC</p>
+                    </div>
+                {% endcall %}
+            {% endcall %}
+
+            <!-- Policy Card -->
+            {% call card() %}
+                {% call card_header() %}
+                    <div class="flex items-center justify-between">
+                        {% call card_title() %}Policy{% endcall %}
+                        <div class="p-2 bg-accent/10 rounded-full">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-accent"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"></path></svg>
+                        </div>
+                    </div>
+                {% endcall %}
+                {% call card_content() %}
+                    <div class="stat-card">
+                        <div class="stat-value capitalize" x-text="report.policy || 'none'">-</div>
+                        <p class="stat-description">DMARC policy applied</p>
+                    </div>
+                {% endcall %}
+            {% endcall %}
+        </div>
+
+        <!-- Report Metadata -->
+        {% call card() %}
+            {% call card_header() %}
+                {% call card_title() %}Report Metadata{% endcall %}
+                {% call card_description() %}
+                    Technical details about this DMARC aggregate report
+                {% endcall %}
+            {% endcall %}
+            {% call card_content() %}
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div>
+                        <dt class="text-sm font-medium text-muted-foreground">Report ID</dt>
+                        <dd class="text-sm font-mono mt-1 break-all" x-text="report.report_id"></dd>
+                    </div>
+                    <div>
+                        <dt class="text-sm font-medium text-muted-foreground">Reporting Organization</dt>
+                        <dd class="text-sm mt-1" x-text="report.org_name"></dd>
+                    </div>
+                    <div>
+                        <dt class="text-sm font-medium text-muted-foreground">Domain</dt>
+                        <dd class="text-sm mt-1">
+                            <a :href="'/domain/' + report.domain" class="text-primary hover:underline" x-text="report.domain"></a>
+                        </dd>
+                    </div>
+                    <div>
+                        <dt class="text-sm font-medium text-muted-foreground">DKIM Alignment</dt>
+                        <dd class="text-sm mt-1" x-text="report.adkim === 'r' ? 'Relaxed' : (report.adkim === 's' ? 'Strict' : 'Not specified')"></dd>
+                    </div>
+                    <div>
+                        <dt class="text-sm font-medium text-muted-foreground">SPF Alignment</dt>
+                        <dd class="text-sm mt-1" x-text="report.aspf === 'r' ? 'Relaxed' : (report.aspf === 's' ? 'Strict' : 'Not specified')"></dd>
+                    </div>
+                    <div>
+                        <dt class="text-sm font-medium text-muted-foreground">Policy Percentage</dt>
+                        <dd class="text-sm mt-1" x-text="(report.percentage || 100) + '%'"></dd>
+                    </div>
+                    <div>
+                        <dt class="text-sm font-medium text-muted-foreground">Subdomain Policy</dt>
+                        <dd class="text-sm mt-1 capitalize" x-text="report.subdomain_policy || 'Same as domain'"></dd>
+                    </div>
+                    <div>
+                        <dt class="text-sm font-medium text-muted-foreground">Processed At</dt>
+                        <dd class="text-sm mt-1" x-text="report.processed_at ? new Date(report.processed_at).toLocaleString() : '-'"></dd>
+                    </div>
+                </div>
+            {% endcall %}
+        {% endcall %}
+
+        <!-- Source IPs Table -->
+        {% call card() %}
+            {% call card_header() %}
+                <div class="flex items-center justify-between">
+                    {% call card_title() %}Source IP Details{% endcall %}
+                    <div class="text-sm text-muted-foreground">
+                        <span x-text="report.records?.length || 0"></span> unique source records
+                    </div>
+                </div>
+                {% call card_description() %}
+                    All sending sources included in this report with authentication results
+                {% endcall %}
+            {% endcall %}
+            {% call card_content() %}
+                {% call table() %}
+                    {% call thead() %}
+                        {% call tr() %}
+                            {% call th() %}Source IP{% endcall %}
+                            {% call th() %}Count{% endcall %}
+                            {% call th() %}SPF{% endcall %}
+                            {% call th() %}DKIM{% endcall %}
+                            {% call th() %}Disposition{% endcall %}
+                            {% call th() %}Header From{% endcall %}
+                        {% endcall %}
+                    {% endcall %}
+                    {% call tbody() %}
+                        <template x-if="!report.records || report.records.length === 0">
+                            <tr>
+                                <td colspan="6" class="text-center py-4">
+                                    <div class="text-muted-foreground">No records found in this report</div>
+                                </td>
+                            </tr>
+                        </template>
+                        <template x-for="record in report.records" :key="record.source_ip + record.count">
+                            {% call tr() %}
+                                {% call td() %}
+                                    <span class="font-mono" x-text="record.source_ip"></span>
+                                {% endcall %}
+                                {% call td() %}
+                                    <span class="font-medium" x-text="record.count"></span>
+                                {% endcall %}
+                                {% call td() %}
+                                    <template x-if="record.spf === 'pass'">
+                                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">Pass</span>
+                                    </template>
+                                    <template x-if="record.spf === 'fail'">
+                                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-red-100 text-red-800">Fail</span>
+                                    </template>
+                                    <template x-if="record.spf !== 'pass' && record.spf !== 'fail'">
+                                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-800" x-text="record.spf || 'unknown'"></span>
+                                    </template>
+                                {% endcall %}
+                                {% call td() %}
+                                    <template x-if="record.dkim === 'pass'">
+                                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">Pass</span>
+                                    </template>
+                                    <template x-if="record.dkim === 'fail'">
+                                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-red-100 text-red-800">Fail</span>
+                                    </template>
+                                    <template x-if="record.dkim !== 'pass' && record.dkim !== 'fail'">
+                                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-800" x-text="record.dkim || 'unknown'"></span>
+                                    </template>
+                                {% endcall %}
+                                {% call td() %}
+                                    <template x-if="record.disposition === 'none'">
+                                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">None</span>
+                                    </template>
+                                    <template x-if="record.disposition === 'quarantine'">
+                                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-yellow-100 text-yellow-800">Quarantine</span>
+                                    </template>
+                                    <template x-if="record.disposition === 'reject'">
+                                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-red-100 text-red-800">Reject</span>
+                                    </template>
+                                {% endcall %}
+                                {% call td() %}
+                                    <span class="text-sm" x-text="record.header_from || '-'"></span>
+                                {% endcall %}
+                            {% endcall %}
+                        </template>
+                    {% endcall %}
+                {% endcall %}
+            {% endcall %}
+        {% endcall %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function reportDetailApp(reportId) {
+    return {
+        reportId: reportId,
+        report: {},
+        loading: true,
+        error: null,
+
+        init() {
+            this.fetchReport();
+        },
+
+        async fetchReport() {
+            try {
+                const response = await fetch(`/api/v1/reports/${this.reportId}`);
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        this.error = `Report with ID "${this.reportId}" was not found.`;
+                    } else {
+                        this.error = `Failed to load report: ${response.statusText}`;
+                    }
+                    this.loading = false;
+                    return;
+                }
+                this.report = await response.json();
+                this.loading = false;
+            } catch (error) {
+                console.error('Error fetching report:', error);
+                this.error = 'Failed to load report details. Please try again.';
+                this.loading = false;
+            }
+        },
+
+        formatDate(timestamp) {
+            if (!timestamp) return '-';
+            const date = new Date(timestamp * 1000);
+            return date.toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric'
+            });
+        },
+
+        getPassRateClass(rate) {
+            if (rate >= 90) return 'text-green-500';
+            if (rate >= 50) return 'text-yellow-500';
+            return 'text-red-500';
+        }
+    };
+}
+</script>
+{% endblock %}

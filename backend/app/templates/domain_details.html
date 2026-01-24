@@ -6,6 +6,9 @@
 {% block title %}DMARQ - {{ domain.name }} Details{% endblock %}
 
 {% block content %}
+<!-- Leaflet CSS for maps -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
 <div class="container mx-auto py-4" x-data="domainDetailsApp('{{ domain_id }}')">
     <nav class="mb-4 text-sm">
         <ol class="flex items-center space-x-2">
@@ -38,7 +41,6 @@
 
         <!-- Domain Stats -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <!-- DMARC Compliance Card -->
             {% call card() %}
                 {% call card_header() %}
                     <div class="flex items-center justify-between">
@@ -50,13 +52,12 @@
                 {% endcall %}
                 {% call card_content() %}
                     <div class="stat-card">
-                        <div id="compliance-rate" class="stat-value" x-text="stats.complianceRate + '%'">-</div>
+                        <div class="stat-value" x-text="stats.complianceRate + '%'">-</div>
                         <p class="stat-description">Emails passing DMARC</p>
                     </div>
                 {% endcall %}
             {% endcall %}
-            
-            <!-- Total Emails Card -->
+
             {% call card() %}
                 {% call card_header() %}
                     <div class="flex items-center justify-between">
@@ -68,13 +69,12 @@
                 {% endcall %}
                 {% call card_content() %}
                     <div class="stat-card">
-                        <div id="total-emails" class="stat-value" x-text="stats.totalEmails">-</div>
+                        <div class="stat-value" x-text="stats.totalEmails">-</div>
                         <p class="stat-description">Total emails processed</p>
                     </div>
                 {% endcall %}
             {% endcall %}
-            
-            <!-- Failed Emails Card -->
+
             {% call card() %}
                 {% call card_header() %}
                     <div class="flex items-center justify-between">
@@ -86,13 +86,12 @@
                 {% endcall %}
                 {% call card_content() %}
                     <div class="stat-card">
-                        <div id="failed-emails" class="stat-value" x-text="stats.failedEmails">-</div>
+                        <div class="stat-value" x-text="stats.failedEmails">-</div>
                         <p class="stat-description">Emails failing DMARC</p>
                     </div>
                 {% endcall %}
             {% endcall %}
-            
-            <!-- Reports Card -->
+
             {% call card() %}
                 {% call card_header() %}
                     <div class="flex items-center justify-between">
@@ -104,7 +103,7 @@
                 {% endcall %}
                 {% call card_content() %}
                     <div class="stat-card">
-                        <div id="report-count" class="stat-value" x-text="stats.reportCount">-</div>
+                        <div class="stat-value" x-text="stats.reportCount">-</div>
                         <p class="stat-description">DMARC reports received</p>
                     </div>
                 {% endcall %}
@@ -115,9 +114,7 @@
         {% call card() %}
             {% call card_header() %}
                 {% call card_title() %}Compliance Over Time{% endcall %}
-                {% call card_description() %}
-                    DMARC pass rate for the past 30 days
-                {% endcall %}
+                {% call card_description() %}DMARC pass rate for the past 30 days{% endcall %}
             {% endcall %}
             {% call card_content() %}
                 <div class="h-64">
@@ -126,13 +123,33 @@
             {% endcall %}
         {% endcall %}
 
+        <!-- World Map for Source IPs -->
+        {% call card() %}
+            {% call card_header() %}
+                {% call card_title() %}Source Locations{% endcall %}
+                {% call card_description() %}Geographic distribution of email sending sources{% endcall %}
+            {% endcall %}
+            {% call card_content() %}
+                <div id="source-map" class="h-64 rounded-lg"></div>
+                <div class="mt-2 flex items-center gap-4 text-xs text-muted-foreground">
+                    <span class="flex items-center gap-1">
+                        <span class="w-3 h-3 rounded-full bg-green-500"></span> Pass
+                    </span>
+                    <span class="flex items-center gap-1">
+                        <span class="w-3 h-3 rounded-full bg-red-500"></span> Fail
+                    </span>
+                    <span class="flex items-center gap-1">
+                        <span class="w-3 h-3 rounded-full bg-yellow-500"></span> Mixed
+                    </span>
+                </div>
+            {% endcall %}
+        {% endcall %}
+
         <!-- DNS Records -->
         {% call card() %}
             {% call card_header() %}
                 {% call card_title() %}DNS Records{% endcall %}
-                {% call card_description() %}
-                    Email authentication DNS records for this domain
-                {% endcall %}
+                {% call card_description() %}Email authentication DNS records for this domain{% endcall %}
             {% endcall %}
             {% call card_content() %}
                 <div class="grid gap-4">
@@ -164,171 +181,148 @@
             {% endcall %}
         {% endcall %}
 
-        <!-- Source Report Table -->
-        {% call card() %}
-            {% call card_header() %}
-                <div class="flex items-center justify-between">
-                    {% call card_title() %}Sending Sources{% endcall %}
-                    <div class="space-x-2">
-                        <select x-model="filters.dateRange" class="select select-sm select-bordered">
-                            <option value="7">Last 7 days</option>
-                            <option value="30">Last 30 days</option>
-                            <option value="90">Last 90 days</option>
-                            <option value="all">All time</option>
-                        </select>
-                        <input 
-                            x-model="filters.sourceFilter" 
-                            type="text" 
-                            placeholder="Filter sources..." 
-                            class="input input-sm input-bordered max-w-xs"
-                        >
+        <!-- Side by side: Recent Reports and Sending Sources -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Recent Reports -->
+            {% call card() %}
+                {% call card_header() %}
+                    {% call card_title() %}Recent Reports{% endcall %}
+                    {% call card_description() %}Latest DMARC reports received{% endcall %}
+                {% endcall %}
+                {% call card_content() %}
+                    <div class="overflow-x-auto max-h-96 overflow-y-auto">
+                        {% call table() %}
+                            {% call thead() %}
+                                {% call tr() %}
+                                    {% call th() %}Date{% endcall %}
+                                    {% call th() %}Organization{% endcall %}
+                                    {% call th() %}Emails{% endcall %}
+                                    {% call th() %}Pass Rate{% endcall %}
+                                    {% call th() %}{% endcall %}
+                                {% endcall %}
+                            {% endcall %}
+                            {% call tbody() %}
+                                <template x-if="reports.length === 0">
+                                    <tr>
+                                        <td colspan="5" class="text-center py-4">
+                                            <div class="text-muted-foreground">No reports available</div>
+                                        </td>
+                                    </tr>
+                                </template>
+                                <template x-for="report in reports" :key="report.id">
+                                    {% call tr() %}
+                                        {% call td() %}
+                                            <span class="text-sm" x-text="formatDate(report.begin_date)"></span>
+                                        {% endcall %}
+                                        {% call td() %}
+                                            <span class="text-sm" x-text="report.org_name"></span>
+                                        {% endcall %}
+                                        {% call td() %}
+                                            <span x-text="report.total_emails"></span>
+                                        {% endcall %}
+                                        {% call td() %}
+                                            <span class="inline-flex items-center px-2 py-1 rounded text-xs"
+                                                  :class="getPassRateClass(report.pass_rate)">
+                                                <span x-text="report.pass_rate + '%'"></span>
+                                            </span>
+                                        {% endcall %}
+                                        {% call td() %}
+                                            <a :href="'/reports/' + report.id" class="btn btn-xs btn-outline">
+                                                View
+                                            </a>
+                                        {% endcall %}
+                                    {% endcall %}
+                                </template>
+                            {% endcall %}
+                        {% endcall %}
                     </div>
-                </div>
-                {% call card_description() %}
-                    IP addresses and servers sending email as this domain
                 {% endcall %}
             {% endcall %}
-            {% call card_content() %}
-                {% call table() %}
-                    {% call thead() %}
-                        {% call tr() %}
-                            {% call th() %}Source IP{% endcall %}
-                            {% call th() %}Total Emails{% endcall %}
-                            {% call th() %}SPF{% endcall %}
-                            {% call th() %}DKIM{% endcall %}
-                            {% call th() %}DMARC{% endcall %}
-                            {% call th() %}Disposition{% endcall %}
-                        {% endcall %}
-                    {% endcall %}
-                    {% call tbody() %}
-                        <template x-if="sources.length === 0">
-                            <tr>
-                                <td colspan="6" class="text-center py-4">
-                                    <div class="text-muted-foreground">No data available for this time period</div>
-                                </td>
-                            </tr>
-                        </template>
-                        <template x-for="source in filteredSources" :key="source.ip">
-                            {% call tr() %}
-                                {% call td() %}
-                                    <span x-text="source.ip"></span>
-                                {% endcall %}
-                                {% call td() %}
-                                    <span x-text="source.count"></span>
-                                {% endcall %}
-                                {% call td() %}
-                                    <template x-if="source.spf === 'pass'">
-                                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">Pass</span>
-                                    </template>
-                                    <template x-if="source.spf === 'fail'">
-                                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-red-100 text-red-800">Fail</span>
-                                    </template>
-                                    <template x-if="source.spf === 'neutral' || source.spf === 'none'">
-                                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-800" x-text="source.spf"></span>
-                                    </template>
-                                {% endcall %}
-                                {% call td() %}
-                                    <template x-if="source.dkim === 'pass'">
-                                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">Pass</span>
-                                    </template>
-                                    <template x-if="source.dkim === 'fail'">
-                                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-red-100 text-red-800">Fail</span>
-                                    </template>
-                                    <template x-if="source.dkim === 'neutral' || source.dkim === 'none'">
-                                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-800" x-text="source.dkim"></span>
-                                    </template>
-                                {% endcall %}
-                                {% call td() %}
-                                    <template x-if="source.dmarc === 'pass'">
-                                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">Pass</span>
-                                    </template>
-                                    <template x-if="source.dmarc === 'fail'">
-                                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-red-100 text-red-800">Fail</span>
-                                    </template>
-                                {% endcall %}
-                                {% call td() %}
-                                    <template x-if="source.disposition === 'none'">
-                                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">None</span>
-                                    </template>
-                                    <template x-if="source.disposition === 'quarantine'">
-                                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-yellow-100 text-yellow-800">Quarantine</span>
-                                    </template>
-                                    <template x-if="source.disposition === 'reject'">
-                                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-red-100 text-red-800">Reject</span>
-                                    </template>
-                                {% endcall %}
-                            {% endcall %}
-                        </template>
-                    {% endcall %}
-                {% endcall %}
-            {% endcall %}
-        {% endcall %}
 
-        <!-- Recent Reports -->
-        {% call card() %}
-            {% call card_header() %}
-                {% call card_title() %}Recent Reports{% endcall %}
-                {% call card_description() %}
-                    Latest DMARC reports received for this domain
+            <!-- Sending Sources -->
+            {% call card() %}
+                {% call card_header() %}
+                    <div class="flex items-center justify-between">
+                        {% call card_title() %}Sending Sources{% endcall %}
+                        <div class="flex items-center gap-2">
+                            <select x-model="filters.dateRange" class="select select-xs select-bordered">
+                                <option value="7">7 days</option>
+                                <option value="30">30 days</option>
+                                <option value="90">90 days</option>
+                                <option value="all">All time</option>
+                            </select>
+                            <input
+                                x-model="filters.sourceFilter"
+                                type="text"
+                                placeholder="Filter..."
+                                class="input input-xs input-bordered w-24"
+                            >
+                        </div>
+                    </div>
+                    {% call card_description() %}IP addresses sending email as this domain{% endcall %}
                 {% endcall %}
-            {% endcall %}
-            {% call card_content() %}
-                {% call table() %}
-                    {% call thead() %}
-                        {% call tr() %}
-                            {% call th() %}Date{% endcall %}
-                            {% call th() %}Organization{% endcall %}
-                            {% call th() %}Emails{% endcall %}
-                            {% call th() %}Pass Rate{% endcall %}
-                            {% call th() %}Policy{% endcall %}
-                            {% call th() %}Actions{% endcall %}
-                        {% endcall %}
-                    {% endcall %}
-                    {% call tbody() %}
-                        <template x-if="reports.length === 0">
-                            <tr>
-                                <td colspan="6" class="text-center py-4">
-                                    <div class="text-muted-foreground">No reports available</div>
-                                </td>
-                            </tr>
-                        </template>
-                        <template x-for="report in reports" :key="report.id">
-                            {% call tr() %}
-                                {% call td() %}
-                                    <span x-text="formatDate(report.begin_date)"></span>
-                                {% endcall %}
-                                {% call td() %}
-                                    <span x-text="report.org_name"></span>
-                                {% endcall %}
-                                {% call td() %}
-                                    <span x-text="report.total_emails"></span>
-                                {% endcall %}
-                                {% call td() %}
-                                    <span class="inline-flex items-center px-2 py-1 rounded text-xs"
-                                          :class="getPassRateClass(report.pass_rate)">
-                                        <span x-text="report.pass_rate + '%'"></span>
-                                    </span>
-                                {% endcall %}
-                                {% call td() %}
-                                    <span x-text="report.policy"></span>
-                                {% endcall %}
-                                {% call td() %}
-                                    <a :href="'/reports/' + report.id" class="btn btn-sm btn-outline">
-                                        View
-                                    </a>
+                {% call card_content() %}
+                    <div class="overflow-x-auto max-h-96 overflow-y-auto">
+                        {% call table() %}
+                            {% call thead() %}
+                                {% call tr() %}
+                                    {% call th() %}Source IP{% endcall %}
+                                    {% call th() %}Count{% endcall %}
+                                    {% call th() %}SPF{% endcall %}
+                                    {% call th() %}DKIM{% endcall %}
+                                    {% call th() %}Action{% endcall %}
                                 {% endcall %}
                             {% endcall %}
-                        </template>
-                    {% endcall %}
+                            {% call tbody() %}
+                                <template x-if="filteredSources.length === 0">
+                                    <tr>
+                                        <td colspan="5" class="text-center py-4">
+                                            <div class="text-muted-foreground">No sources found</div>
+                                        </td>
+                                    </tr>
+                                </template>
+                                <template x-for="source in filteredSources" :key="source.ip">
+                                    {% call tr() %}
+                                        {% call td() %}
+                                            <span class="font-mono text-sm" x-text="source.ip"></span>
+                                        {% endcall %}
+                                        {% call td() %}
+                                            <span x-text="source.count"></span>
+                                        {% endcall %}
+                                        {% call td() %}
+                                            <span class="badge badge-xs"
+                                                  :class="source.spf === 'pass' ? 'badge-success' : 'badge-error'"
+                                                  x-text="source.spf"></span>
+                                        {% endcall %}
+                                        {% call td() %}
+                                            <span class="badge badge-xs"
+                                                  :class="source.dkim === 'pass' ? 'badge-success' : 'badge-error'"
+                                                  x-text="source.dkim"></span>
+                                        {% endcall %}
+                                        {% call td() %}
+                                            <span class="badge badge-xs"
+                                                  :class="{
+                                                      'badge-info': source.disposition === 'none',
+                                                      'badge-warning': source.disposition === 'quarantine',
+                                                      'badge-error': source.disposition === 'reject'
+                                                  }"
+                                                  x-text="source.disposition"></span>
+                                        {% endcall %}
+                                    {% endcall %}
+                                </template>
+                            {% endcall %}
+                        {% endcall %}
+                    </div>
                 {% endcall %}
             {% endcall %}
-        {% endcall %}
+        </div>
     </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 function domainDetailsApp(domainId) {
     return {
@@ -349,32 +343,43 @@ function domainDetailsApp(domainId) {
         },
         reports: [],
         sources: [],
+        sourceLocations: [],
         complianceChart: null,
+        sourceMap: null,
         filters: {
             dateRange: '30',
             sourceFilter: ''
         },
-        
+
         init() {
             this.fetchDomainStats();
             this.fetchDNSRecords();
             this.fetchReports();
             this.fetchSources();
-            
+            this.initMap();
+
             this.$watch('filters.dateRange', () => {
                 this.fetchSources();
             });
         },
-        
+
         get filteredSources() {
             if (!this.sources) return [];
-            
             return this.sources.filter(source => {
                 if (!this.filters.sourceFilter) return true;
                 return source.ip.toLowerCase().includes(this.filters.sourceFilter.toLowerCase());
             });
         },
-        
+
+        initMap() {
+            // Initialize Leaflet map
+            this.sourceMap = L.map('source-map').setView([30, 0], 2);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors',
+                maxZoom: 18
+            }).addTo(this.sourceMap);
+        },
+
         async fetchDomainStats() {
             try {
                 const response = await fetch(`/api/v1/domains/${this.domainId}/stats`);
@@ -386,7 +391,7 @@ function domainDetailsApp(domainId) {
                 console.error('Error fetching domain stats:', error);
             }
         },
-        
+
         async fetchDNSRecords() {
             try {
                 const response = await fetch(`/api/v1/domains/${this.domainId}/dns`);
@@ -398,7 +403,7 @@ function domainDetailsApp(domainId) {
                 console.error('Error fetching DNS records:', error);
             }
         },
-        
+
         async fetchReports() {
             try {
                 const response = await fetch(`/api/v1/domains/${this.domainId}/reports?limit=10`);
@@ -411,34 +416,94 @@ function domainDetailsApp(domainId) {
                 console.error('Error fetching reports:', error);
             }
         },
-        
+
         async fetchSources() {
             try {
                 const response = await fetch(`/api/v1/domains/${this.domainId}/sources?days=${this.filters.dateRange}`);
                 if (response.ok) {
                     const data = await response.json();
                     this.sources = data.sources;
+                    this.geolocateSources();
                 }
             } catch (error) {
                 console.error('Error fetching sources:', error);
             }
         },
-        
+
+        async geolocateSources() {
+            // Clear existing markers
+            if (this.sourceMap) {
+                this.sourceMap.eachLayer(layer => {
+                    if (layer instanceof L.Marker || layer instanceof L.CircleMarker) {
+                        this.sourceMap.removeLayer(layer);
+                    }
+                });
+            }
+
+            // Use ip-api.com for geolocation (free, no API key needed, batch support)
+            const ips = this.sources.slice(0, 100).map(s => s.ip); // Limit to 100
+            if (ips.length === 0) return;
+
+            try {
+                // ip-api.com batch endpoint
+                const response = await fetch('http://ip-api.com/batch?fields=status,lat,lon,city,country,query', {
+                    method: 'POST',
+                    body: JSON.stringify(ips)
+                });
+
+                if (response.ok) {
+                    const locations = await response.json();
+                    const bounds = [];
+
+                    locations.forEach((loc, index) => {
+                        if (loc.status === 'success' && loc.lat && loc.lon) {
+                            const source = this.sources[index];
+                            const isPass = source.spf === 'pass' || source.dkim === 'pass';
+                            const isFail = source.spf === 'fail' && source.dkim === 'fail';
+                            const color = isPass ? '#22c55e' : (isFail ? '#ef4444' : '#eab308');
+
+                            const marker = L.circleMarker([loc.lat, loc.lon], {
+                                radius: Math.min(Math.log(source.count + 1) * 3 + 5, 20),
+                                fillColor: color,
+                                color: '#fff',
+                                weight: 1,
+                                opacity: 1,
+                                fillOpacity: 0.7
+                            }).addTo(this.sourceMap);
+
+                            marker.bindPopup(`
+                                <strong>${source.ip}</strong><br>
+                                ${loc.city || ''}, ${loc.country || ''}<br>
+                                Emails: ${source.count}<br>
+                                SPF: ${source.spf}, DKIM: ${source.dkim}
+                            `);
+
+                            bounds.push([loc.lat, loc.lon]);
+                        }
+                    });
+
+                    if (bounds.length > 0) {
+                        this.sourceMap.fitBounds(bounds, { padding: [20, 20] });
+                    }
+                }
+            } catch (error) {
+                console.error('Error geolocating sources:', error);
+            }
+        },
+
         initComplianceChart(timelineData) {
             if (!timelineData) return;
-            
+
             const ctx = document.getElementById('compliance-chart').getContext('2d');
-            
+
             if (this.complianceChart) {
                 this.complianceChart.destroy();
             }
-            
+
             const labels = timelineData.map(item => item.date);
             const complianceData = timelineData.map(item => item.compliance_rate);
-            
-            // Calculate the threshold line data (recommended 98% for policy advancement)
             const thresholdData = Array(labels.length).fill(98);
-            
+
             this.complianceChart = new Chart(ctx, {
                 type: 'line',
                 data: {
@@ -447,23 +512,19 @@ function domainDetailsApp(domainId) {
                         {
                             label: 'Compliance Rate',
                             data: complianceData,
-                            borderColor: 'rgb(59, 130, 246)', // blue-500
+                            borderColor: 'rgb(59, 130, 246)',
                             backgroundColor: 'rgba(59, 130, 246, 0.1)',
                             tension: 0.4,
                             fill: true,
-                            pointBackgroundColor: 'rgb(59, 130, 246)',
-                            pointRadius: 3,
-                            pointHoverRadius: 5
+                            pointRadius: 3
                         },
                         {
-                            label: 'Recommended Threshold (98%)',
+                            label: 'Target (98%)',
                             data: thresholdData,
-                            borderColor: 'rgba(220, 38, 38, 0.6)', // red-600 with opacity
+                            borderColor: 'rgba(220, 38, 38, 0.6)',
                             borderDash: [5, 5],
                             pointRadius: 0,
-                            borderWidth: 2,
-                            fill: false,
-                            tension: 0
+                            fill: false
                         }
                     ]
                 },
@@ -472,87 +533,23 @@ function domainDetailsApp(domainId) {
                     maintainAspectRatio: false,
                     scales: {
                         y: {
-                            beginAtZero: false,
-                            min: Math.max(0, Math.min(...complianceData) - 10), // Dynamic min value
+                            min: Math.max(0, Math.min(...complianceData) - 10),
                             max: 100,
-                            ticks: {
-                                callback: value => value + '%'
-                            },
-                            title: {
-                                display: true,
-                                text: 'Compliance Rate (%)',
-                                font: {
-                                    weight: 'bold'
-                                }
-                            },
-                            grid: {
-                                color: 'rgba(0, 0, 0, 0.05)'
-                            }
-                        },
-                        x: {
-                            title: {
-                                display: true,
-                                text: 'Date',
-                                font: {
-                                    weight: 'bold'
-                                }
-                            },
-                            grid: {
-                                display: false
-                            }
+                            ticks: { callback: value => value + '%' }
                         }
                     },
                     plugins: {
-                        tooltip: {
-                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                            titleFont: {
-                                size: 13
-                            },
-                            bodyFont: {
-                                size: 12
-                            },
-                            padding: 10,
-                            callbacks: {
-                                label: function(context) {
-                                    if (context.dataset.label === 'Compliance Rate') {
-                                        return `Compliance: ${context.parsed.y}%`;
-                                    }
-                                    return context.dataset.label;
-                                },
-                                title: function(context) {
-                                    return `Date: ${context[0].label}`;
-                                }
-                            }
-                        },
-                        legend: {
-                            display: true,
-                            position: 'top',
-                            labels: {
-                                usePointStyle: true,
-                                padding: 15
-                            }
-                        },
-                        annotation: {
-                            annotations: {
-                                box1: {
-                                    type: 'box',
-                                    yMin: 90,
-                                    yMax: 100,
-                                    backgroundColor: 'rgba(34, 197, 94, 0.05)',
-                                    borderWidth: 0
-                                }
-                            }
-                        }
+                        legend: { position: 'top' }
                     }
                 }
             });
         },
-        
+
         formatDate(timestamp) {
             const date = new Date(timestamp * 1000);
             return date.toLocaleDateString();
         },
-        
+
         getPassRateClass(rate) {
             if (rate >= 90) return 'bg-green-100 text-green-800';
             if (rate >= 50) return 'bg-yellow-100 text-yellow-800';

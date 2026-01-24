@@ -25,6 +25,11 @@ class Domain(Base):
     # DNS verification status
     verified = Column(Boolean, default=False, index=True)
     verification_token = Column(String, nullable=True)
+
+    # Cloudflare sync metadata
+    cloudflare_account = Column(String, nullable=True, index=True)  # Which CF account owns this domain
+    cloudflare_zone_id = Column(String, nullable=True)  # Cloudflare zone ID
+    last_dns_sync = Column(DateTime, nullable=True)  # When DNS records were last synced
     
     # Date fields
     created_at = Column(DateTime, default=datetime.utcnow, index=True)

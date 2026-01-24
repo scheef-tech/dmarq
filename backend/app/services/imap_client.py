@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from app.core.config import get_settings
 from app.services.dmarc_parser import DMARCParser
 from app.services.persistent_store import ReportStore
+from app.services.base_source import BaseSourceService, SourceStatus, FetchResult
 
 # Setup logger
 logger = logging.getLogger(__name__)
@@ -374,5 +375,103 @@ class IMAPClient:
                             logger.info(f"Successfully processed DMARC report: {filename}")
                         except Exception as e:
                             logger.error(f"Error processing attachment {filename}: {str(e)}")
-        
+
         return reports_found
+
+
+class IMAPSourceService(BaseSourceService):
+    """
+    IMAP source service that implements the BaseSourceService interface.
+
+    Used by DataSourceManager for consistent handling of all source types.
+    Wraps the existing IMAPClient functionality.
+    """
+
+    def __init__(self, source_id: int, config: Dict[str, Any]):
+        """
+        Initialize IMAP source service from DataSource config.
+
+        Args:
+            source_id: Database ID of the DataSource
+            config: Decrypted configuration containing:
+                - server: IMAP server hostname
+                - port: IMAP port (default 993)
+                - username: IMAP username
+                - password: IMAP password
+                - ssl: Use SSL (default True)
+        """
+        super().__init__(source_id, config)
+
+        # Create wrapped IMAPClient with config values
+        self._client = IMAPClient(
+            server=config.get("server"),
+            port=config.get("port", 993),
+            username=config.get("username"),
+            password=config.get("password"),
+            delete_emails=config.get("delete_emails", False)
+        )
+
+    def test_connection(self) -> Tuple[bool, str, Dict[str, Any]]:
+        """
+        Test IMAP connection.
+
+        Returns:
+            Tuple of (success, message, stats)
+        """
+        return self._client.test_connection()
+
+    def fetch_reports(self, days: int = 7) -> FetchResult:
+        """
+        Fetch DMARC reports from IMAP mailbox.
+
+        Args:
+            days: Number of days to look back
+
+        Returns:
+            FetchResult with operation details
+        """
+        result = self._client.fetch_reports(days)
+
+        return FetchResult(
+            success=result.get("success", False),
+            message=result.get("error", "Fetch completed") if not result.get("success") else "Fetch completed",
+            processed=result.get("processed", 0),
+            reports_found=result.get("reports_found", 0),
+            new_domains=result.get("new_domains", []),
+            errors=result.get("errors", [])
+        )
+
+    def get_status(self) -> SourceStatus:
+        """
+        Get current IMAP connection status.
+
+        Returns:
+            SourceStatus with connection info
+        """
+        success, message, stats = self._client.test_connection()
+
+        return SourceStatus(
+            connected=success,
+            message=message,
+            stats=stats,
+            error=None if success else message
+        )
+
+    def _get_required_config_fields(self) -> List[str]:
+        """Get required configuration fields for IMAP."""
+        return ["server", "username", "password"]
+
+
+# Register the service with DataSourceManager
+def _register_imap_service():
+    """Register IMAPSourceService with the DataSourceManager."""
+    try:
+        from app.services.datasource_manager import DataSourceManager
+        from app.models.datasource import DataSourceType
+        DataSourceManager.register_service(DataSourceType.IMAP, IMAPSourceService)
+    except ImportError:
+        # DataSourceManager not available yet (during module loading)
+        pass
+
+# Auto-register when module is imported
+_register_imap_service()

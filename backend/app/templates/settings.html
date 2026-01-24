@@ -9,186 +9,406 @@
 {% block page_title %}Settings{% endblock %}
 
 {% block content %}
-<div class="grid gap-4 md:gap-8 py-4">
-    <!-- IMAP Configuration -->
-    {% call card() %}
-        {% call card_header() %}
-            {% call card_title() %}IMAP Configuration{% endcall %}
-            {% call card_description() %}
-                Configure the IMAP connection to automatically retrieve DMARC reports from your email
-            {% endcall %}
-        {% endcall %}
-        {% call card_content() %}
-            <form id="imap-form" class="space-y-6" x-data="imapForm()">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div class="space-y-4">
-                        {% call form_group() %}
-                            {% call label(for="imap_server", required=True) %}IMAP Server{% endcall %}
-                            {{ input(type="text", name="imap_server", id="imap_server", placeholder="mail.example.com", required=True) }}
-                        {% endcall %}
+<div class="space-y-6 py-4" x-data="dataSourcesHub()">
 
-                        {% call form_group() %}
-                            {% call label(for="imap_port", required=True) %}IMAP Port{% endcall %}
-                            {{ input(type="number", name="imap_port", id="imap_port", value="993", required=True) }}
-                        {% endcall %}
-                        
-                        {% call form_group() %}
-                            {% call label(for="imap_ssl") %}Use SSL{% endcall %}
-                            <div class="flex items-center space-x-2">
-                                <input type="checkbox" id="imap_ssl" name="imap_ssl" class="h-4 w-4 rounded border-border text-primary focus:ring-primary" checked />
-                                <label for="imap_ssl" class="text-sm text-muted-foreground">Enable SSL/TLS connection (recommended)</label>
+    <!-- Header with Add Source Button -->
+    <div class="flex items-center justify-between">
+        <div>
+            <h2 class="text-2xl font-bold">Data Sources</h2>
+            <p class="text-muted-foreground">Manage your IMAP, Gmail, and Cloudflare connections</p>
+        </div>
+        <button @click="openAddModal()" class="btn btn-primary">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mr-2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            Add Source
+        </button>
+    </div>
+
+    <!-- Type Filter Tabs -->
+    <div class="border-b border-base-300">
+        <nav class="flex space-x-4" aria-label="Source type filter">
+            <button @click="activeTab = 'all'"
+                    :class="{'border-primary text-primary': activeTab === 'all', 'border-transparent text-muted-foreground hover:text-foreground': activeTab !== 'all'}"
+                    class="px-3 py-2 text-sm font-medium border-b-2 transition-colors">
+                All
+                <span class="ml-1 px-2 py-0.5 text-xs rounded-full bg-base-200" x-text="sources.length"></span>
+            </button>
+            <button @click="activeTab = 'imap'"
+                    :class="{'border-primary text-primary': activeTab === 'imap', 'border-transparent text-muted-foreground hover:text-foreground': activeTab !== 'imap'}"
+                    class="px-3 py-2 text-sm font-medium border-b-2 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="inline mr-1"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path></svg>
+                IMAP
+                <span class="ml-1 px-2 py-0.5 text-xs rounded-full bg-base-200" x-text="sourcesByType('imap').length"></span>
+            </button>
+            <button @click="activeTab = 'gmail_api'"
+                    :class="{'border-primary text-primary': activeTab === 'gmail_api', 'border-transparent text-muted-foreground hover:text-foreground': activeTab !== 'gmail_api'}"
+                    class="px-3 py-2 text-sm font-medium border-b-2 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="inline mr-1"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+                Gmail API
+                <span class="ml-1 px-2 py-0.5 text-xs rounded-full bg-base-200" x-text="sourcesByType('gmail_api').length"></span>
+            </button>
+            <button @click="activeTab = 'cloudflare'"
+                    :class="{'border-primary text-primary': activeTab === 'cloudflare', 'border-transparent text-muted-foreground hover:text-foreground': activeTab !== 'cloudflare'}"
+                    class="px-3 py-2 text-sm font-medium border-b-2 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="inline mr-1"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path></svg>
+                Cloudflare
+                <span class="ml-1 px-2 py-0.5 text-xs rounded-full bg-base-200" x-text="sourcesByType('cloudflare').length"></span>
+            </button>
+        </nav>
+    </div>
+
+    <!-- Loading State -->
+    <div x-show="loading" class="flex justify-center py-12">
+        <span class="loading loading-spinner loading-lg"></span>
+    </div>
+
+    <!-- Empty State -->
+    <div x-show="!loading && filteredSources.length === 0" class="text-center py-12">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="mx-auto text-muted-foreground mb-4"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path></svg>
+        <h3 class="text-lg font-medium mb-2">No data sources configured</h3>
+        <p class="text-muted-foreground mb-4">Add an IMAP server, Gmail account, or Cloudflare connection to start receiving DMARC reports.</p>
+        <button @click="openAddModal()" class="btn btn-primary">
+            Add Your First Source
+        </button>
+    </div>
+
+    <!-- Source Cards Grid -->
+    <div x-show="!loading && filteredSources.length > 0" class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <template x-for="source in filteredSources" :key="source.id">
+            <div class="card bg-base-100 shadow-sm border border-base-300 hover:shadow-md transition-shadow">
+                <div class="card-body p-4">
+                    <!-- Header -->
+                    <div class="flex items-start justify-between">
+                        <div class="flex items-center gap-3">
+                            <!-- Type Icon -->
+                            <div class="p-2 rounded-lg" :class="{
+                                'bg-blue-100 text-blue-600': source.type === 'imap',
+                                'bg-red-100 text-red-600': source.type === 'gmail_api',
+                                'bg-orange-100 text-orange-600': source.type === 'cloudflare'
+                            }">
+                                <template x-if="source.type === 'imap'">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path></svg>
+                                </template>
+                                <template x-if="source.type === 'gmail_api'">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+                                </template>
+                                <template x-if="source.type === 'cloudflare'">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path></svg>
+                                </template>
                             </div>
-                        {% endcall %}
-                    </div>
-
-                    <div class="space-y-4">
-                        {% call form_group() %}
-                            {% call label(for="imap_username", required=True) %}IMAP Username{% endcall %}
-                            {{ input(type="text", name="imap_username", id="imap_username", placeholder="dmarc-reports@example.com", required=True) }}
-                        {% endcall %}
-
-                        {% call form_group() %}
-                            {% call label(for="imap_password", required=True) %}IMAP Password{% endcall %}
-                            <div class="relative">
-                                {{ input(type="password", name="imap_password", id="imap_password", required=True) }}
-                                <button 
-                                    type="button" 
-                                    class="absolute right-2 top-2.5 text-muted-foreground hover:text-foreground"
-                                    x-on:click="togglePassword"
-                                >
-                                    <svg x-show="!showPassword" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"></path><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"></path><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"></path><line x1="2" x2="22" y1="2" y2="22"></line></svg>
-                                    <svg x-show="showPassword" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" x-cloak><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                                </button>
+                            <div>
+                                <h3 class="font-semibold" x-text="source.name"></h3>
+                                <p class="text-xs text-muted-foreground capitalize" x-text="source.type.replace('_', ' ')"></p>
                             </div>
-                        {% endcall %}
-                        
-                        {% call form_group() %}
-                            {% call label(for="polling_interval") %}Polling Interval (minutes){% endcall %}
-                            {{ input(type="number", name="polling_interval", id="polling_interval", value="60", min="15", max="1440") }}
-                            <p class="text-xs text-muted-foreground mt-1">How often to check for new reports (minimum 15 minutes)</p>
-                        {% endcall %}
-                    </div>
-                </div>
-
-                <div id="test-connection-result" x-show="testResult" x-cloak>
-                    <template x-if="testStatus === 'success'">
-                        {% call alert(variant="success") %}
-                            {% call alert_title() %}Connection Successful{% endcall %}
-                            {% call alert_description() %}
-                                <p x-text="testResult"></p>
-                            {% endcall %}
-                        {% endcall %}
-                    </template>
-                    
-                    <template x-if="testStatus === 'error'">
-                        {% call alert(variant="error") %}
-                            {% call alert_title() %}Connection Failed{% endcall %}
-                            {% call alert_description() %}
-                                <p x-text="testResult"></p>
-                            {% endcall %}
-                        {% endcall %}
-                    </template>
-                </div>
-                
-                <div id="save-result" x-show="saveResult" x-cloak>
-                    <template x-if="saveStatus === 'success'">
-                        {% call alert(variant="success") %}
-                            {% call alert_title() %}Settings Saved{% endcall %}
-                            {% call alert_description() %}
-                                <p x-text="saveResult"></p>
-                            {% endcall %}
-                        {% endcall %}
-                    </template>
-                    
-                    <template x-if="saveStatus === 'error'">
-                        {% call alert(variant="error") %}
-                            {% call alert_title() %}Save Failed{% endcall %}
-                            {% call alert_description() %}
-                                <p x-text="saveResult"></p>
-                            {% endcall %}
-                        {% endcall %}
-                    </template>
-                </div>
-
-                <div class="flex items-center justify-end space-x-4">
-                    <button 
-                        type="button" 
-                        class="btn btn-outline btn-md"
-                        x-on:click="testConnection"
-                        x-bind:disabled="isTesting || isSaving"
-                    >
-                        <span x-show="!isTesting">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-                            Test Connection
-                        </span>
-                        <span x-show="isTesting" class="flex items-center" x-cloak>
-                            <svg class="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            Testing...
-                        </span>
-                    </button>
-                    <button 
-                        type="submit" 
-                        class="btn btn-default btn-md"
-                        x-bind:disabled="isTesting || isSaving"
-                    >
-                        <span x-show="!isSaving">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-                            Save Configuration
-                        </span>
-                        <span x-show="isSaving" class="flex items-center" x-cloak>
-                            <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            Saving...
-                        </span>
-                    </button>
-                </div>
-            </form>
-        {% endcall %}
-    {% endcall %}
-
-    <!-- DMARC Policy Management -->
-    {% call card() %}
-        {% call card_header() %}
-            {% call card_title() %}DMARC Policy Management{% endcall %}
-            {% call card_description() %}
-                Configure default DMARC policy settings for newly added domains
-            {% endcall %}
-        {% endcall %}
-        {% call card_content() %}
-            <form id="dmarc-policy-form" class="space-y-6" x-data="{isUpdating: false, updateResult: ''}">
-                <div class="space-y-4">
-                    {% call form_group() %}
-                        {% call label(for="default_policy") %}Default DMARC Policy{% endcall %}
-                        <select id="default_policy" name="default_policy" class="input w-full">
-                            <option value="none">None (monitoring only)</option>
-                            <option value="quarantine">Quarantine (send to spam)</option>
-                            <option value="reject">Reject (block delivery)</option>
-                        </select>
-                        <p class="text-xs text-muted-foreground mt-1">Policy applied to new domains when no specific policy is set</p>
-                    {% endcall %}
-
-                    {% call form_group() %}
-                        {% call label(for="percent") %}Percentage{% endcall %}
-                        <div class="flex items-center">
-                            <input type="range" id="percent" name="percent" min="0" max="100" value="100" class="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer" />
-                            <span class="ml-2 text-sm font-medium w-10" id="percent-display">100%</span>
                         </div>
-                        <p class="text-xs text-muted-foreground mt-1">Percentage of messages to which the DMARC policy is applied</p>
-                    {% endcall %}
+                        <!-- Status Dot -->
+                        <div class="flex items-center gap-1.5">
+                            <span class="h-2.5 w-2.5 rounded-full" :class="{
+                                'bg-green-500': source.status === 'connected',
+                                'bg-red-500': source.status === 'error',
+                                'bg-yellow-500': source.status === 'pending',
+                                'bg-gray-400': source.status === 'disconnected'
+                            }"></span>
+                            <span class="text-xs capitalize" x-text="source.status"></span>
+                        </div>
+                    </div>
+
+                    <!-- Error Message -->
+                    <div x-show="source.error_message" class="mt-2 p-2 bg-red-50 text-red-700 text-xs rounded">
+                        <span x-text="source.error_message"></span>
+                    </div>
+
+                    <!-- Stats -->
+                    <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
+                        <div class="p-2 bg-base-200 rounded">
+                            <div class="text-muted-foreground">Last Check</div>
+                            <div class="font-medium" x-text="source.last_check ? formatDate(source.last_check) : 'Never'"></div>
+                        </div>
+                        <div class="p-2 bg-base-200 rounded">
+                            <div class="text-muted-foreground">Last Sync</div>
+                            <div class="font-medium" x-text="source.last_sync ? formatDate(source.last_sync) : 'Never'"></div>
+                        </div>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="mt-4 flex items-center justify-between">
+                        <div class="flex gap-1">
+                            <button @click="testSource(source.id)"
+                                    :disabled="testingSource === source.id"
+                                    class="btn btn-xs btn-ghost" title="Test Connection">
+                                <template x-if="testingSource !== source.id">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                                </template>
+                                <template x-if="testingSource === source.id">
+                                    <span class="loading loading-spinner loading-xs"></span>
+                                </template>
+                            </button>
+                            <button @click="openLogsModal(source)" class="btn btn-xs btn-ghost" title="View Logs">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                            </button>
+                        </div>
+                        <div class="flex gap-1">
+                            <!-- Sync/Backfill Button -->
+                            <template x-if="source.type === 'cloudflare'">
+                                <button @click="syncSource(source.id)"
+                                        :disabled="syncingSource === source.id"
+                                        class="btn btn-xs btn-outline">
+                                    <template x-if="syncingSource !== source.id">
+                                        <span>Sync</span>
+                                    </template>
+                                    <template x-if="syncingSource === source.id">
+                                        <span class="loading loading-spinner loading-xs"></span>
+                                    </template>
+                                </button>
+                            </template>
+                            <template x-if="source.type !== 'cloudflare'">
+                                <button @click="backfillSource(source.id)"
+                                        :disabled="backfillingSource === source.id"
+                                        class="btn btn-xs btn-outline">
+                                    <template x-if="backfillingSource !== source.id">
+                                        <span>Backfill</span>
+                                    </template>
+                                    <template x-if="backfillingSource === source.id">
+                                        <span class="loading loading-spinner loading-xs"></span>
+                                    </template>
+                                </button>
+                            </template>
+                            <!-- Edit/Delete -->
+                            <button @click="openEditModal(source)" class="btn btn-xs btn-ghost">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                            </button>
+                            <button @click="deleteSource(source.id)" class="btn btn-xs btn-ghost text-red-500">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <!-- Add/Edit Source Modal -->
+    <div x-show="showAddModal || showEditModal"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+         @click.self="closeModals()"
+         x-cloak>
+        <div class="bg-base-100 rounded-lg shadow-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+            <div class="p-6">
+                <h3 class="text-lg font-semibold mb-4" x-text="showEditModal ? 'Edit Data Source' : 'Add Data Source'"></h3>
+
+                <!-- Type Selection (Add mode only) -->
+                <div x-show="!showEditModal" class="mb-6">
+                    <label class="block text-sm font-medium mb-2">Source Type</label>
+                    <div class="grid grid-cols-3 gap-3">
+                        <button @click="formData.type = 'imap'"
+                                :class="{'ring-2 ring-primary bg-primary/10': formData.type === 'imap'}"
+                                class="p-4 border rounded-lg text-center hover:bg-base-200 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mx-auto mb-2 text-blue-600"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path></svg>
+                            <div class="font-medium">IMAP</div>
+                            <div class="text-xs text-muted-foreground">Email server</div>
+                        </button>
+                        <button @click="formData.type = 'gmail_api'"
+                                :class="{'ring-2 ring-primary bg-primary/10': formData.type === 'gmail_api'}"
+                                class="p-4 border rounded-lg text-center hover:bg-base-200 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mx-auto mb-2 text-red-600"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+                            <div class="font-medium">Gmail API</div>
+                            <div class="text-xs text-muted-foreground">OAuth access</div>
+                        </button>
+                        <button @click="formData.type = 'cloudflare'"
+                                :class="{'ring-2 ring-primary bg-primary/10': formData.type === 'cloudflare'}"
+                                class="p-4 border rounded-lg text-center hover:bg-base-200 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mx-auto mb-2 text-orange-600"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path></svg>
+                            <div class="font-medium">Cloudflare</div>
+                            <div class="text-xs text-muted-foreground">Domain sync</div>
+                        </button>
+                    </div>
                 </div>
 
-                <div class="flex justify-end">
-                    <button type="submit" class="btn btn-default btn-md">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-                        Save Policy Settings
+                <!-- Source Name -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">Name</label>
+                    <input type="text" x-model="formData.name"
+                           class="input input-bordered w-full"
+                           placeholder="My Email Server">
+                </div>
+
+                <!-- IMAP Fields -->
+                <div x-show="formData.type === 'imap'" class="space-y-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Server</label>
+                            <input type="text" x-model="formData.config.server"
+                                   class="input input-bordered w-full"
+                                   placeholder="mail.example.com">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Port</label>
+                            <input type="number" x-model="formData.config.port"
+                                   class="input input-bordered w-full"
+                                   value="993">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Username</label>
+                        <input type="text" x-model="formData.config.username"
+                               class="input input-bordered w-full"
+                               placeholder="dmarc@example.com">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Password</label>
+                        <input type="password" x-model="formData.config.password"
+                               class="input input-bordered w-full">
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" x-model="formData.config.ssl"
+                               class="checkbox checkbox-sm" checked>
+                        <label class="text-sm">Use SSL/TLS</label>
+                    </div>
+                </div>
+
+                <!-- Gmail API Fields -->
+                <div x-show="formData.type === 'gmail_api'" class="space-y-4">
+                    <div class="p-4 bg-blue-50 text-blue-800 rounded-lg text-sm">
+                        <p class="font-medium mb-1">OAuth Configuration</p>
+                        <p>Create OAuth credentials in the <a href="https://console.cloud.google.com/apis/credentials" target="_blank" class="underline">Google Cloud Console</a>.</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Client ID</label>
+                        <input type="text" x-model="formData.config.client_id"
+                               class="input input-bordered w-full"
+                               placeholder="xxx.apps.googleusercontent.com">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Client Secret</label>
+                        <input type="password" x-model="formData.config.client_secret"
+                               class="input input-bordered w-full">
+                    </div>
+                </div>
+
+                <!-- Cloudflare Fields -->
+                <div x-show="formData.type === 'cloudflare'" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Account Name</label>
+                        <input type="text" x-model="formData.config.account_name"
+                               class="input input-bordered w-full"
+                               placeholder="my-account">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">API Token</label>
+                        <input type="password" x-model="formData.config.api_token"
+                               class="input input-bordered w-full">
+                        <p class="text-xs text-muted-foreground mt-1">Requires Zone:Read permission</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Account ID (optional)</label>
+                        <input type="text" x-model="formData.config.account_id"
+                               class="input input-bordered w-full"
+                               placeholder="Optional - auto-detected if omitted">
+                    </div>
+                </div>
+
+                <!-- Error Message -->
+                <div x-show="formError" class="mt-4 p-3 bg-red-50 text-red-700 rounded text-sm" x-text="formError"></div>
+
+                <!-- Actions -->
+                <div class="mt-6 flex justify-end gap-3">
+                    <button @click="closeModals()" class="btn btn-ghost">Cancel</button>
+                    <button @click="saveSource()" :disabled="saving" class="btn btn-primary">
+                        <template x-if="!saving">
+                            <span x-text="showEditModal ? 'Update' : 'Create'"></span>
+                        </template>
+                        <template x-if="saving">
+                            <span class="loading loading-spinner loading-sm"></span>
+                        </template>
                     </button>
                 </div>
-            </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Logs Modal -->
+    <div x-show="showLogsModal"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+         @click.self="showLogsModal = false"
+         x-cloak>
+        <div class="bg-base-100 rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col">
+            <div class="p-4 border-b flex items-center justify-between">
+                <h3 class="text-lg font-semibold">
+                    Activity Log - <span x-text="selectedSource?.name"></span>
+                </h3>
+                <button @click="showLogsModal = false" class="btn btn-ghost btn-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4">
+                <div class="bg-black/90 text-green-400 font-mono text-xs rounded-lg p-3 min-h-[300px]">
+                    <template x-for="log in sourceLogs" :key="log.id">
+                        <div class="py-0.5" :class="{
+                            'text-green-400': log.level === 'success',
+                            'text-blue-400': log.level === 'info',
+                            'text-yellow-400': log.level === 'warning',
+                            'text-red-400': log.level === 'error'
+                        }">
+                            <span class="text-gray-500" x-text="formatTime(log.timestamp)"></span>
+                            [<span x-text="log.level.toUpperCase()"></span>]
+                            <span x-text="log.message"></span>
+                        </div>
+                    </template>
+                    <div x-show="sourceLogs.length === 0" class="text-gray-500">No log entries.</div>
+                </div>
+            </div>
+            <div class="p-4 border-t flex justify-end">
+                <button @click="clearSourceLogs()" class="btn btn-ghost btn-sm">Clear Logs</button>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- DMARC Policy Templates Section -->
+<div class="mt-8">
+    {% call card() %}
+        {% call card_header() %}
+            {% call card_title() %}DMARC Policy Templates{% endcall %}
+            {% call card_description() %}
+                Quick reference for DMARC policy configurations
+            {% endcall %}
+        {% endcall %}
+        {% call card_content() %}
+            <div class="grid md:grid-cols-3 gap-4">
+                <div class="p-4 border rounded-lg">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 rounded">Monitoring</span>
+                    </div>
+                    <code class="text-xs block bg-base-200 p-2 rounded mb-2">v=DMARC1; p=none; rua=mailto:dmarc@example.com</code>
+                    <p class="text-xs text-muted-foreground">Start here. Monitors email authentication without affecting delivery.</p>
+                </div>
+                <div class="p-4 border rounded-lg">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="px-2 py-1 text-xs font-medium bg-orange-100 text-orange-800 rounded">Quarantine</span>
+                    </div>
+                    <code class="text-xs block bg-base-200 p-2 rounded mb-2">v=DMARC1; p=quarantine; pct=25; rua=mailto:dmarc@example.com</code>
+                    <p class="text-xs text-muted-foreground">Intermediate step. Sends failing emails to spam for 25% of messages.</p>
+                </div>
+                <div class="p-4 border rounded-lg">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded">Reject</span>
+                    </div>
+                    <code class="text-xs block bg-base-200 p-2 rounded mb-2">v=DMARC1; p=reject; rua=mailto:dmarc@example.com</code>
+                    <p class="text-xs text-muted-foreground">Full protection. Rejects all emails that fail authentication.</p>
+                </div>
+            </div>
         {% endcall %}
     {% endcall %}
 </div>
@@ -196,141 +416,285 @@
 
 {% block scripts %}
 <script>
-function imapForm() {
+function dataSourcesHub() {
     return {
-        showPassword: false,
-        isTesting: false,
-        isSaving: false,
-        testResult: '',
-        testStatus: '',
-        saveResult: '',
-        saveStatus: '',
-        
-        togglePassword() {
-            this.showPassword = !this.showPassword;
-            const passwordInput = document.getElementById('imap_password');
-            passwordInput.type = this.showPassword ? 'text' : 'password';
-        },
-        
-        async testConnection() {
-            this.isTesting = true;
-            this.testResult = '';
-            
-            const formData = new FormData(document.getElementById('imap-form'));
-            const data = Object.fromEntries(formData.entries());
-            data.imap_ssl = formData.get('imap_ssl') === 'on';
-            
-            try {
-                const response = await fetch('/api/v1/admin/test-imap', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(data)
-                });
-                
-                const result = await response.json();
-                
-                if (response.ok) {
-                    this.testStatus = 'success';
-                    this.testResult = 'Successfully connected to the IMAP server. Found ' + (result.message_count || 0) + ' messages in the inbox.';
-                } else {
-                    throw new Error(result.detail || 'Failed to connect to the IMAP server');
-                }
-            } catch (error) {
-                this.testStatus = 'error';
-                this.testResult = `Connection failed: ${error.message}`;
-            } finally {
-                this.isTesting = false;
-            }
-        },
-        
-        init() {
-            // Load existing IMAP settings
-            this.loadImapSettings();
-            
-            // Update percent display
-            const percentInput = document.getElementById('percent');
-            const percentDisplay = document.getElementById('percent-display');
-            if (percentInput && percentDisplay) {
-                percentInput.addEventListener('input', function() {
-                    percentDisplay.textContent = this.value + '%';
-                });
-            }
-            
-            // Handle form submission
-            const form = document.getElementById('imap-form');
-            form.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                await this.saveImapSettings();
-            });
-        },
-        
-        async loadImapSettings() {
-            try {
-                const response = await fetch('/api/v1/admin/imap-settings');
-                
-                if (response.ok) {
-                    const settings = await response.json();
-                    
-                    document.getElementById('imap_server').value = settings.imap_server || '';
-                    document.getElementById('imap_port').value = settings.imap_port || 993;
-                    document.getElementById('imap_username').value = settings.imap_username || '';
-                    document.getElementById('imap_password').value = settings.imap_password || '';
-                    document.getElementById('imap_ssl').checked = settings.imap_ssl !== false;
-                    document.getElementById('polling_interval').value = settings.polling_interval || 60;
-                }
-            } catch (error) {
-                console.error('Failed to load IMAP settings:', error);
-            }
-        },
-        
-        async saveImapSettings() {
-            this.isSaving = true;
-            this.saveResult = '';
-            
-            const formData = new FormData(document.getElementById('imap-form'));
-            const data = Object.fromEntries(formData.entries());
-            data.imap_ssl = formData.get('imap_ssl') === 'on';
-            
-            try {
-                const response = await fetch('/api/v1/admin/imap-settings', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(data)
-                });
-                
-                const result = await response.json();
-                
-                if (response.ok) {
-                    this.saveStatus = 'success';
-                    this.saveResult = 'IMAP settings saved successfully. The system will now check for new DMARC reports based on your settings.';
-                } else {
-                    throw new Error(result.detail || 'Failed to save IMAP settings');
-                }
-            } catch (error) {
-                this.saveStatus = 'error';
-                this.saveResult = `Save failed: ${error.message}`;
-            } finally {
-                this.isSaving = false;
-            }
-        }
-    };
-}
+        // State
+        sources: [],
+        loading: true,
+        activeTab: 'all',
 
-// Initialize any scripts after DOM load
-document.addEventListener('DOMContentLoaded', function() {
-    // DMARC policy form handling
-    const policyForm = document.getElementById('dmarc-policy-form');
-    if (policyForm) {
-        policyForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-            // In a real app, you would save the policy settings here
-            alert('DMARC policy settings saved');
-        });
+        // Modals
+        showAddModal: false,
+        showEditModal: false,
+        showLogsModal: false,
+        selectedSource: null,
+        sourceLogs: [],
+
+        // Form
+        formData: {
+            type: 'imap',
+            name: '',
+            config: {
+                server: '',
+                port: 993,
+                username: '',
+                password: '',
+                ssl: true,
+                client_id: '',
+                client_secret: '',
+                api_token: '',
+                account_name: '',
+                account_id: ''
+            }
+        },
+        formError: '',
+        saving: false,
+
+        // Operation states
+        testingSource: null,
+        syncingSource: null,
+        backfillingSource: null,
+
+        // Lifecycle
+        init() {
+            this.fetchSources();
+            // Poll for status updates every 30 seconds
+            setInterval(() => this.fetchSources(), 30000);
+        },
+
+        // Computed
+        get filteredSources() {
+            if (this.activeTab === 'all') return this.sources;
+            return this.sources.filter(s => s.type === this.activeTab);
+        },
+
+        sourcesByType(type) {
+            return this.sources.filter(s => s.type === type);
+        },
+
+        // API calls
+        async fetchSources() {
+            try {
+                const response = await fetch('/api/v1/sources/');
+                if (response.ok) {
+                    this.sources = await response.json();
+                }
+            } catch (error) {
+                console.error('Error fetching sources:', error);
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async testSource(sourceId) {
+            this.testingSource = sourceId;
+            try {
+                const response = await fetch(`/api/v1/sources/${sourceId}/test`, { method: 'POST' });
+                const result = await response.json();
+                await this.fetchSources();
+                if (!result.success) {
+                    alert(`Connection test failed: ${result.message}`);
+                }
+            } catch (error) {
+                console.error('Test error:', error);
+                alert('Connection test failed');
+            } finally {
+                this.testingSource = null;
+            }
+        },
+
+        async syncSource(sourceId) {
+            this.syncingSource = sourceId;
+            try {
+                const response = await fetch(`/api/v1/sources/${sourceId}/sync`, { method: 'POST' });
+                const result = await response.json();
+                await this.fetchSources();
+                alert(result.message);
+            } catch (error) {
+                console.error('Sync error:', error);
+                alert('Sync failed');
+            } finally {
+                this.syncingSource = null;
+            }
+        },
+
+        async backfillSource(sourceId) {
+            this.backfillingSource = sourceId;
+            try {
+                const response = await fetch(`/api/v1/sources/${sourceId}/backfill?days=9999`, { method: 'POST' });
+                const result = await response.json();
+                await this.fetchSources();
+                alert(`Backfill ${result.success ? 'completed' : 'failed'}: ${result.message}`);
+            } catch (error) {
+                console.error('Backfill error:', error);
+                alert('Backfill failed');
+            } finally {
+                this.backfillingSource = null;
+            }
+        },
+
+        async deleteSource(sourceId) {
+            if (!confirm('Are you sure you want to delete this data source?')) return;
+
+            try {
+                const response = await fetch(`/api/v1/sources/${sourceId}`, { method: 'DELETE' });
+                if (response.ok) {
+                    await this.fetchSources();
+                } else {
+                    alert('Failed to delete source');
+                }
+            } catch (error) {
+                console.error('Delete error:', error);
+                alert('Failed to delete source');
+            }
+        },
+
+        async saveSource() {
+            this.formError = '';
+            this.saving = true;
+
+            try {
+                const url = this.showEditModal
+                    ? `/api/v1/sources/${this.selectedSource.id}`
+                    : '/api/v1/sources/';
+                const method = this.showEditModal ? 'PUT' : 'POST';
+
+                // Filter config based on type
+                const config = {};
+                if (this.formData.type === 'imap') {
+                    config.server = this.formData.config.server;
+                    config.port = parseInt(this.formData.config.port) || 993;
+                    config.username = this.formData.config.username;
+                    config.password = this.formData.config.password;
+                    config.ssl = this.formData.config.ssl;
+                } else if (this.formData.type === 'gmail_api') {
+                    config.client_id = this.formData.config.client_id;
+                    config.client_secret = this.formData.config.client_secret;
+                } else if (this.formData.type === 'cloudflare') {
+                    config.api_token = this.formData.config.api_token;
+                    config.account_name = this.formData.config.account_name;
+                    if (this.formData.config.account_id) {
+                        config.account_id = this.formData.config.account_id;
+                    }
+                }
+
+                const body = {
+                    name: this.formData.name,
+                    config: config
+                };
+
+                if (!this.showEditModal) {
+                    body.type = this.formData.type;
+                }
+
+                const response = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+
+                if (response.ok) {
+                    await this.fetchSources();
+                    this.closeModals();
+                } else {
+                    const error = await response.json();
+                    this.formError = error.detail || 'Failed to save source';
+                }
+            } catch (error) {
+                console.error('Save error:', error);
+                this.formError = 'Failed to save source';
+            } finally {
+                this.saving = false;
+            }
+        },
+
+        async fetchSourceLogs(sourceId) {
+            try {
+                const response = await fetch(`/api/v1/sources/${sourceId}/logs?limit=100`);
+                if (response.ok) {
+                    const data = await response.json();
+                    this.sourceLogs = data.logs || [];
+                }
+            } catch (error) {
+                console.error('Error fetching logs:', error);
+            }
+        },
+
+        async clearSourceLogs() {
+            if (!this.selectedSource) return;
+            try {
+                await fetch(`/api/v1/sources/${this.selectedSource.id}/logs`, { method: 'DELETE' });
+                this.sourceLogs = [];
+            } catch (error) {
+                console.error('Error clearing logs:', error);
+            }
+        },
+
+        // Modal handlers
+        openAddModal() {
+            this.resetForm();
+            this.showAddModal = true;
+        },
+
+        openEditModal(source) {
+            this.selectedSource = source;
+            this.formData.type = source.type;
+            this.formData.name = source.name;
+            // Note: We don't load config for security - user must re-enter
+            this.showEditModal = true;
+        },
+
+        openLogsModal(source) {
+            this.selectedSource = source;
+            this.fetchSourceLogs(source.id);
+            this.showLogsModal = true;
+        },
+
+        closeModals() {
+            this.showAddModal = false;
+            this.showEditModal = false;
+            this.selectedSource = null;
+            this.formError = '';
+        },
+
+        resetForm() {
+            this.formData = {
+                type: 'imap',
+                name: '',
+                config: {
+                    server: '',
+                    port: 993,
+                    username: '',
+                    password: '',
+                    ssl: true,
+                    client_id: '',
+                    client_secret: '',
+                    api_token: '',
+                    account_name: '',
+                    account_id: ''
+                }
+            };
+            this.formError = '';
+        },
+
+        // Formatters
+        formatDate(isoString) {
+            if (!isoString) return 'Never';
+            const date = new Date(isoString);
+            const now = new Date();
+            const diff = (now - date) / 1000;
+
+            if (diff < 60) return 'Just now';
+            if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+            if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+            return date.toLocaleDateString();
+        },
+
+        formatTime(timestamp) {
+            const date = new Date(timestamp);
+            return date.toLocaleTimeString();
+        }
     }
-});
+}
 </script>
 {% endblock %}

@@ -24,12 +24,12 @@
             {% endcall %}
             {% call card_content() %}
                 <div class="stat-card">
-                    <div id="total-domains" class="stat-value">0</div>
-                    <p class="stat-description">Active domains being monitored</p>
+                    <div id="total-domains" class="stat-value" x-text="stats.totalDomains">0</div>
+                    <p class="stat-description">Domains being monitored</p>
                 </div>
             {% endcall %}
         {% endcall %}
-        
+
         <!-- Emails Analyzed Card -->
         {% call card() %}
             {% call card_header() %}
@@ -42,12 +42,12 @@
             {% endcall %}
             {% call card_content() %}
                 <div class="stat-card">
-                    <div id="total-emails" class="stat-value">0</div>
+                    <div id="total-emails" class="stat-value" x-text="formatNumber(stats.totalEmails)">0</div>
                     <p class="stat-description">Total emails processed</p>
                 </div>
             {% endcall %}
         {% endcall %}
-        
+
         <!-- Pass Rate Card -->
         {% call card() %}
             {% call card_header() %}
@@ -60,12 +60,12 @@
             {% endcall %}
             {% call card_content() %}
                 <div class="stat-card">
-                    <div id="overall-pass-rate" class="stat-value text-green-500">0%</div>
+                    <div id="overall-pass-rate" class="stat-value" :class="getPassRateColor(stats.passRate)" x-text="stats.passRate + '%'">0%</div>
                     <p class="stat-description">Overall DMARC compliance</p>
                 </div>
             {% endcall %}
         {% endcall %}
-        
+
         <!-- Reports Card -->
         {% call card() %}
             {% call card_header() %}
@@ -78,200 +78,169 @@
             {% endcall %}
             {% call card_content() %}
                 <div class="stat-card">
-                    <div id="reports-processed" class="stat-value">0</div>
+                    <div id="reports-processed" class="stat-value" x-text="formatNumber(stats.reportsProcessed)">0</div>
                     <p class="stat-description">DMARC reports received</p>
                 </div>
             {% endcall %}
         {% endcall %}
     </div>
-    
+
+    <!-- Critical Issues Banner -->
+    <div x-show="criticalIssues.length > 0" x-cloak
+         class="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+        <div class="flex items-center gap-3">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-500 shrink-0"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            <div class="flex-1 flex items-center gap-4 flex-wrap">
+                <template x-for="issue in criticalIssues.slice(0, 5)" :key="issue.domain">
+                    <a :href="'/domain/' + issue.domain"
+                       class="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-white dark:bg-base-100 border border-red-200 dark:border-red-700 text-sm hover:border-red-400 transition-colors">
+                        <span class="w-1.5 h-1.5 rounded-full"
+                              :class="issue.priority === 'critical' ? 'bg-red-500' : 'bg-yellow-500'"></span>
+                        <span class="font-medium" x-text="issue.domain"></span>
+                        <span class="text-muted-foreground text-xs truncate max-w-[150px]" x-text="issue.title || issue.description"></span>
+                    </a>
+                </template>
+                <span x-show="criticalIssues.length > 5" class="text-sm text-red-600">
+                    +<span x-text="criticalIssues.length - 5"></span> more
+                </span>
+            </div>
+            <span class="badge badge-error badge-sm shrink-0" x-text="criticalIssues.length"></span>
+        </div>
+    </div>
+
     <!-- Domain Compliance Table -->
-    <div x-show="hasDomainData" x-cloak>
-        {% call card() %}
-            {% call card_header() %}
-                <div class="flex items-center justify-between">
-                    {% call card_title() %}Domain Compliance{% endcall %}
-                    {% call button(variant="outline", size="sm") %}
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path></svg>
-                        Refresh
+    {% call card() %}
+        {% call card_header() %}
+            <div class="flex items-center justify-between">
+                <div>
+                    {% call card_title() %}All Domains{% endcall %}
+                    {% call card_description() %}
+                        Complete overview of all monitored domains with DMARC status
                     {% endcall %}
                 </div>
-                {% call card_description() %}
-                    Overview of domains and their DMARC compliance status
-                {% endcall %}
-            {% endcall %}
-            {% call card_content() %}
+                <div class="flex items-center gap-2">
+                    <input
+                        x-model="searchQuery"
+                        type="text"
+                        placeholder="Search domains..."
+                        class="input input-sm input-bordered max-w-xs"
+                    >
+                    <select x-model="policyFilter" class="select select-sm select-bordered">
+                        <option value="">All Policies</option>
+                        <option value="none">None</option>
+                        <option value="quarantine">Quarantine</option>
+                        <option value="reject">Reject</option>
+                    </select>
+                    <button @click="refreshData()" class="btn btn-sm btn-outline">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path></svg>
+                        Refresh
+                    </button>
+                </div>
+            </div>
+        {% endcall %}
+        {% call card_content() %}
+            <div x-show="loading" class="flex justify-center py-8">
+                <span class="loading loading-spinner loading-lg"></span>
+            </div>
+            <div x-show="!loading">
                 {% call table() %}
                     {% call thead() %}
                         {% call tr() %}
                             {% call th() %}Domain{% endcall %}
+                            {% call th() %}Status{% endcall %}
+                            {% call th() %}Policy{% endcall %}
                             {% call th() %}Emails{% endcall %}
                             {% call th() %}Pass Rate{% endcall %}
-                            {% call th() %}Failed{% endcall %}
                             {% call th() %}Reports{% endcall %}
+                            {% call th() %}Recommendation{% endcall %}
                             {% call th("text-right") %}Actions{% endcall %}
                         {% endcall %}
                     {% endcall %}
                     {% call tbody() %}
-                        <tbody id="domains-table-body">
-                            <!-- Domain data will be populated here via JavaScript -->
-                        </tbody>
+                        <template x-if="filteredDomains.length === 0">
+                            <tr>
+                                <td colspan="8" class="text-center py-8">
+                                    <div class="text-muted-foreground">
+                                        <template x-if="searchQuery || policyFilter">
+                                            <span>No domains match your filters</span>
+                                        </template>
+                                        <template x-if="!searchQuery && !policyFilter">
+                                            <div class="space-y-2">
+                                                <p>No domains have been synced yet.</p>
+                                                <p class="text-sm">Use the Cloudflare sync or upload DMARC reports to get started.</p>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </td>
+                            </tr>
+                        </template>
+                        <template x-for="domain in filteredDomains" :key="domain.id">
+                            {% call tr() %}
+                                {% call td() %}
+                                    <div class="font-medium" x-text="domain.domain_name"></div>
+                                    <div class="text-xs text-muted-foreground" x-show="domain.cloudflare_account" x-text="domain.cloudflare_account"></div>
+                                {% endcall %}
+                                {% call td() %}
+                                    <template x-if="domain.active">
+                                        <span class="badge badge-sm badge-success">Active</span>
+                                    </template>
+                                    <template x-if="!domain.active">
+                                        <span class="badge badge-sm badge-ghost">Parked</span>
+                                    </template>
+                                {% endcall %}
+                                {% call td() %}
+                                    <span class="badge badge-sm"
+                                          :class="{
+                                              'badge-error': domain.dmarc_policy === 'reject',
+                                              'badge-warning': domain.dmarc_policy === 'quarantine',
+                                              'badge-info': domain.dmarc_policy === 'none' || !domain.dmarc_policy
+                                          }"
+                                          x-text="domain.dmarc_policy || 'none'"></span>
+                                {% endcall %}
+                                {% call td() %}
+                                    <span x-text="formatNumber(domain.total_emails)"></span>
+                                {% endcall %}
+                                {% call td() %}
+                                    <template x-if="domain.pass_rate !== null">
+                                        <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium"
+                                              :class="getPassRateBadgeClass(domain.pass_rate)"
+                                              x-text="domain.pass_rate + '%'"></span>
+                                    </template>
+                                    <template x-if="domain.pass_rate === null">
+                                        <span class="text-muted-foreground">-</span>
+                                    </template>
+                                {% endcall %}
+                                {% call td() %}
+                                    <span x-text="domain.report_count"></span>
+                                {% endcall %}
+                                {% call td() %}
+                                    <div class="flex items-center gap-1">
+                                        <span class="w-2 h-2 rounded-full"
+                                              :class="{
+                                                  'bg-red-500': domain.recommendation?.priority === 'critical',
+                                                  'bg-orange-500': domain.recommendation?.priority === 'high',
+                                                  'bg-yellow-500': domain.recommendation?.priority === 'medium',
+                                                  'bg-blue-500': domain.recommendation?.priority === 'low',
+                                                  'bg-green-500': domain.recommendation?.priority === 'info'
+                                              }"></span>
+                                        <span class="text-sm truncate max-w-[150px]"
+                                              :title="domain.recommendation?.description"
+                                              x-text="domain.recommendation?.title || '-'"></span>
+                                    </div>
+                                {% endcall %}
+                                {% call td("text-right") %}
+                                    <a :href="'/domain/' + domain.id" class="btn btn-outline btn-sm">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1"><path d="M3 3v18h18"></path><path d="m19 9-5 5-4-4-3 3"></path></svg>
+                                        Details
+                                    </a>
+                                {% endcall %}
+                            {% endcall %}
+                        </template>
                     {% endcall %}
                 {% endcall %}
-            {% endcall %}
+            </div>
         {% endcall %}
-    </div>
-    
-    <!-- No Data Message -->
-    <div x-show="!hasDomainData" x-cloak>
-        {% call card() %}
-            {% call card_content() %}
-                <div class="flex flex-col items-center justify-center py-12 text-center">
-                    <div class="rounded-full p-4 bg-muted mb-4">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-muted-foreground"><circle cx="12" cy="12" r="10"></circle><path d="m8 12 4 0"></path><path d="m16 12 0 .01"></path><path d="M12 16v-4"></path></svg>
-                    </div>
-                    <h3 class="text-lg font-semibold mb-2">No DMARC reports have been uploaded yet</h3>
-                    <p class="text-muted-foreground mb-4 max-w-md">Upload a report or configure IMAP integration to see statistics and gain insights into your domain's email authentication.</p>
-                    <div class="flex gap-2">
-                        {% call button_link(href="/upload") %}
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" x2="12" y1="3" y2="15"></line></svg>
-                            Upload Report
-                        {% endcall %}
-                        {% call button_link(href="/settings", variant="outline") %}
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-                            Configure IMAP
-                        {% endcall %}
-                    </div>
-                </div>
-            {% endcall %}
-        {% endcall %}
-    </div>
-    
-    <!-- Backfill Manager -->
-    <div class="lg:col-span-2" x-data="backfillManager()">
-        {% call card() %}
-            {% call card_header() %}
-                <div class="flex items-center justify-between">
-                    {% call card_title() %}Email Backfill Manager{% endcall %}
-                    <div class="flex items-center gap-2">
-                        <span class="text-sm text-muted-foreground" x-text="'Mailbox: ' + mailbox"></span>
-                    </div>
-                </div>
-            {% endcall %}
-            {% call card_content() %}
-                <!-- Progress Section -->
-                <div class="space-y-4">
-                    <!-- Status and Controls -->
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-3">
-                            <span class="inline-flex items-center gap-1.5">
-                                <span class="h-2.5 w-2.5 rounded-full"
-                                      :class="{
-                                          'bg-green-500 animate-pulse': state.status === 'running',
-                                          'bg-yellow-500': state.status === 'paused',
-                                          'bg-blue-500': state.status === 'completed',
-                                          'bg-red-500': state.status === 'error',
-                                          'bg-gray-400': state.status === 'idle'
-                                      }"></span>
-                                <span class="font-medium capitalize" x-text="state.status"></span>
-                            </span>
-                            <span class="text-sm text-muted-foreground" x-show="state.status === 'running'" x-text="state.current_email"></span>
-                        </div>
-                        <div class="flex gap-2">
-                            <button @click="startBackfill()"
-                                    :disabled="state.status === 'running'"
-                                    class="btn btn-sm btn-primary"
-                                    :class="{'opacity-50 cursor-not-allowed': state.status === 'running'}">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mr-1"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                                Start
-                            </button>
-                            <button @click="stopBackfill()"
-                                    :disabled="state.status !== 'running'"
-                                    class="btn btn-sm btn-outline"
-                                    :class="{'opacity-50 cursor-not-allowed': state.status !== 'running'}">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mr-1"><rect x="6" y="6" width="12" height="12"></rect></svg>
-                                Stop
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Progress Bar -->
-                    <div class="space-y-2">
-                        <div class="flex justify-between text-sm">
-                            <span x-text="`${state.processed_emails + state.skipped_emails} / ${state.total_emails} emails`"></span>
-                            <span x-text="`${state.progress_percent || 0}%`"></span>
-                        </div>
-                        <div class="w-full bg-gray-200 rounded-full h-3 dark:bg-gray-700 overflow-hidden">
-                            <div class="h-3 rounded-full transition-all duration-300 flex"
-                                 :style="`width: ${state.progress_percent || 0}%`">
-                                <div class="bg-blue-500 h-full" :style="`width: ${state.total_emails > 0 ? (state.processed_emails / state.total_emails * 100) : 0}%`"></div>
-                                <div class="bg-gray-400 h-full" :style="`width: ${state.total_emails > 0 ? (state.skipped_emails / state.total_emails * 100) : 0}%`"></div>
-                            </div>
-                        </div>
-                        <div class="flex justify-between text-xs text-muted-foreground">
-                            <span>
-                                <span class="inline-block w-2 h-2 rounded bg-blue-500 mr-1"></span>New: <span x-text="state.processed_emails"></span>
-                                <span class="inline-block w-2 h-2 rounded bg-gray-400 ml-2 mr-1"></span>Skipped: <span x-text="state.skipped_emails"></span>
-                            </span>
-                            <span x-show="state.rate > 0" x-text="`${state.rate} emails/sec`"></span>
-                        </div>
-                    </div>
-
-                    <!-- Stats Grid -->
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 pt-2">
-                        <div class="text-center p-3 bg-muted/50 rounded-lg">
-                            <div class="text-2xl font-bold text-green-600" x-text="state.reports_found"></div>
-                            <div class="text-xs text-muted-foreground">Reports Found</div>
-                        </div>
-                        <div class="text-center p-3 bg-muted/50 rounded-lg">
-                            <div class="text-2xl font-bold text-blue-600" x-text="state.domains_found?.length || 0"></div>
-                            <div class="text-xs text-muted-foreground">Domains</div>
-                        </div>
-                        <div class="text-center p-3 bg-muted/50 rounded-lg">
-                            <div class="text-2xl font-bold text-orange-600" x-text="state.errors"></div>
-                            <div class="text-xs text-muted-foreground">Errors</div>
-                        </div>
-                        <div class="text-center p-3 bg-muted/50 rounded-lg">
-                            <div class="text-2xl font-bold" x-text="formatEta(state.eta_seconds)"></div>
-                            <div class="text-xs text-muted-foreground">ETA</div>
-                        </div>
-                    </div>
-
-                    <!-- Domains Found -->
-                    <div x-show="state.domains_found?.length > 0" class="pt-2">
-                        <div class="text-sm font-medium mb-2">Domains Found:</div>
-                        <div class="flex flex-wrap gap-1">
-                            <template x-for="domain in state.domains_found" :key="domain">
-                                <span class="px-2 py-1 bg-primary/10 text-primary rounded text-xs" x-text="domain"></span>
-                            </template>
-                        </div>
-                    </div>
-
-                    <!-- Log Viewer -->
-                    <div class="pt-2">
-                        <div class="flex items-center justify-between mb-2">
-                            <div class="text-sm font-medium">Activity Log</div>
-                            <button @click="clearLogs()" class="text-xs text-muted-foreground hover:text-foreground">Clear</button>
-                        </div>
-                        <div class="bg-black/90 text-green-400 font-mono text-xs rounded-lg p-3 h-40 overflow-y-auto" id="backfill-log">
-                            <template x-for="log in logs" :key="log.id">
-                                <div class="py-0.5" :class="{
-                                    'text-green-400': log.level === 'success',
-                                    'text-blue-400': log.level === 'info',
-                                    'text-yellow-400': log.level === 'warning',
-                                    'text-red-400': log.level === 'error'
-                                }">
-                                    <span class="text-gray-500" x-text="formatTime(log.timestamp)"></span>
-                                    <span x-text="log.message"></span>
-                                </div>
-                            </template>
-                            <div x-show="logs.length === 0" class="text-gray-500">No log entries yet. Start a backfill to see activity.</div>
-                        </div>
-                    </div>
-                </div>
-            {% endcall %}
-        {% endcall %}
-    </div>
+    {% endcall %}
 </div>
 {% endblock %}
 
@@ -279,241 +248,86 @@
 <script>
 function dashboardApp() {
     return {
-        hasDomainData: false,
-        
+        loading: true,
+        stats: {
+            totalDomains: 0,
+            totalEmails: 0,
+            passRate: 0,
+            reportsProcessed: 0
+        },
+        domains: [],
+        criticalIssues: [],
+        searchQuery: '',
+        policyFilter: '',
         init() {
-            // Fetch domain summary on page load
             this.fetchDomainSummary();
-            
-            // Check IMAP status
-            this.getImapStatus();
         },
-        
-        async getImapStatus() {
-            try {
-                const response = await fetch('/api/v1/admin/poll-status');
-                const data = await response.json();
 
-                const statusIcon = document.getElementById('imap-status-icon');
-                const statusText = document.getElementById('imap-status-text');
-                const lastCheck = document.getElementById('imap-last-check');
-                const mailbox = document.getElementById('imap-mailbox');
-
-                if (data.is_running) {
-                    statusIcon.classList.remove('bg-red-500');
-                    statusIcon.classList.add('bg-green-500');
-                    statusText.textContent = 'Running';
-                } else {
-                    statusIcon.classList.remove('bg-green-500');
-                    statusIcon.classList.add('bg-red-500');
-                    statusText.textContent = 'Stopped';
+        get filteredDomains() {
+            return this.domains.filter(domain => {
+                // Search filter
+                if (this.searchQuery) {
+                    const query = this.searchQuery.toLowerCase();
+                    if (!domain.domain_name.toLowerCase().includes(query)) {
+                        return false;
+                    }
                 }
-
-                if (data.last_check) {
-                    lastCheck.textContent = new Date(data.last_check).toLocaleString();
-                } else {
-                    lastCheck.textContent = 'Never';
+                // Policy filter
+                if (this.policyFilter) {
+                    const policy = domain.dmarc_policy || 'none';
+                    if (policy !== this.policyFilter) {
+                        return false;
+                    }
                 }
-
-                if (data.mailbox) {
-                    mailbox.textContent = data.mailbox;
-                } else {
-                    mailbox.textContent = 'Not configured';
-                }
-            } catch (error) {
-                console.error('Error checking IMAP status:', error);
-            }
+                return true;
+            });
         },
-        
+
         async fetchDomainSummary() {
+            this.loading = true;
             try {
                 const response = await fetch('/api/v1/domains/summary');
                 const data = await response.json();
-                
-                if (data && data.domains && data.domains.length > 0) {
-                    this.hasDomainData = true;
-                    this.updateDashboardStats(data);
-                    this.populateDomainsTable(data.domains);
-                } else {
-                    this.hasDomainData = false;
-                }
+
+                this.stats.totalDomains = data.total_domains || 0;
+                this.stats.totalEmails = data.total_emails || 0;
+                this.stats.passRate = data.overall_pass_rate || 0;
+                this.stats.reportsProcessed = data.reports_processed || 0;
+
+                this.domains = data.domains || [];
+                this.criticalIssues = data.critical_issues || [];
             } catch (error) {
                 console.error('Error fetching domain summary:', error);
-                this.hasDomainData = false;
-            }
-        },
-        
-        updateDashboardStats(data) {
-            if (!data) return;
-            
-            const totalDomains = document.getElementById('total-domains');
-            const totalEmails = document.getElementById('total-emails');
-            const passRate = document.getElementById('overall-pass-rate');
-            const reportsProcessed = document.getElementById('reports-processed');
-            
-            if (totalDomains) totalDomains.textContent = data.total_domains || 0;
-            if (totalEmails) totalEmails.textContent = data.total_emails || 0;
-            if (passRate) passRate.textContent = `${data.overall_pass_rate || 0}%`;
-            if (reportsProcessed) reportsProcessed.textContent = data.reports_processed || 0;
-        },
-        
-        populateDomainsTable(domains) {
-            if (!domains || !domains.length) return;
-            
-            const tableBody = document.getElementById('domains-table-body');
-            if (!tableBody) return;
-            
-            tableBody.innerHTML = '';
-            
-            domains.forEach(domain => {
-                const row = document.createElement('tr');
-                row.className = 'table-row';
-                
-                row.innerHTML = `
-                    <td class="table-cell">
-                        <div class="font-medium">${domain.domain_name}</div>
-                    </td>
-                    <td class="table-cell">${domain.total_emails || 0}</td>
-                    <td class="table-cell">
-                        <span class="inline-flex items-center rounded-md bg-green-50 dark:bg-green-900/20 px-2 py-1 text-xs font-medium text-green-700 dark:text-green-300">
-                            ${domain.pass_rate || 0}%
-                        </span>
-                    </td>
-                    <td class="table-cell">${domain.failed_count || 0}</td>
-                    <td class="table-cell">${domain.report_count || 0}</td>
-                    <td class="table-cell text-right">
-                        <a href="/domain/${domain.id}" class="btn btn-outline btn-sm">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1"><path d="M3 3v18h18"></path><path d="m19 9-5 5-4-4-3 3"></path></svg>
-                            Details
-                        </a>
-                    </td>
-                `;
-                
-                tableBody.appendChild(row);
-            });
-        }
-    }
-}
-
-function backfillManager() {
-    return {
-        state: {
-            status: 'idle',
-            total_emails: 0,
-            processed_emails: 0,
-            skipped_emails: 0,
-            reports_found: 0,
-            domains_found: [],
-            errors: 0,
-            progress_percent: 0,
-            rate: 0,
-            eta_seconds: null,
-            current_email: ''
-        },
-        logs: [],
-        mailbox: 'Loading...',
-        pollInterval: null,
-
-        init() {
-            this.fetchStatus();
-            this.fetchLogs();
-            this.fetchMailbox();
-            // Poll for updates every 2 seconds
-            this.pollInterval = setInterval(() => {
-                this.fetchStatus();
-                if (this.state.status === 'running') {
-                    this.fetchLogs();
-                }
-            }, 2000);
-        },
-
-        destroy() {
-            if (this.pollInterval) {
-                clearInterval(this.pollInterval);
+            } finally {
+                this.loading = false;
             }
         },
 
-        async fetchMailbox() {
-            try {
-                const response = await fetch('/api/v1/admin/poll-status');
-                const data = await response.json();
-                this.mailbox = data.mailbox || 'Not configured';
-            } catch (error) {
-                console.error('Error fetching mailbox:', error);
-            }
+        refreshData() {
+            this.fetchDomainSummary();
         },
 
-        async fetchStatus() {
-            try {
-                const response = await fetch('/api/v1/backfill/status');
-                const data = await response.json();
-                this.state = data;
-            } catch (error) {
-                console.error('Error fetching backfill status:', error);
+        formatNumber(num) {
+            if (num === null || num === undefined) return '0';
+            if (num >= 1000000) {
+                return (num / 1000000).toFixed(1) + 'M';
             }
+            if (num >= 1000) {
+                return (num / 1000).toFixed(1) + 'K';
+            }
+            return num.toString();
         },
 
-        async fetchLogs() {
-            try {
-                const response = await fetch('/api/v1/backfill/logs?limit=50');
-                const data = await response.json();
-                this.logs = data.logs || [];
-                // Auto-scroll log to bottom
-                this.$nextTick(() => {
-                    const logDiv = document.getElementById('backfill-log');
-                    if (logDiv) logDiv.scrollTop = logDiv.scrollHeight;
-                });
-            } catch (error) {
-                console.error('Error fetching logs:', error);
-            }
+        getPassRateColor(rate) {
+            if (rate >= 90) return 'text-green-500';
+            if (rate >= 50) return 'text-yellow-500';
+            return 'text-red-500';
         },
 
-        async startBackfill() {
-            try {
-                const response = await fetch('/api/v1/backfill/start', { method: 'POST' });
-                const data = await response.json();
-                if (data.success) {
-                    this.fetchStatus();
-                    this.fetchLogs();
-                }
-            } catch (error) {
-                console.error('Error starting backfill:', error);
-            }
-        },
-
-        async stopBackfill() {
-            try {
-                const response = await fetch('/api/v1/backfill/stop', { method: 'POST' });
-                await response.json();
-                this.fetchStatus();
-            } catch (error) {
-                console.error('Error stopping backfill:', error);
-            }
-        },
-
-        async clearLogs() {
-            try {
-                await fetch('/api/v1/backfill/logs/clear', { method: 'POST' });
-                this.logs = [];
-            } catch (error) {
-                console.error('Error clearing logs:', error);
-            }
-        },
-
-        formatEta(seconds) {
-            if (!seconds || seconds <= 0) return '--:--';
-            const hours = Math.floor(seconds / 3600);
-            const mins = Math.floor((seconds % 3600) / 60);
-            const secs = seconds % 60;
-            if (hours > 0) {
-                return `${hours}h ${mins}m`;
-            }
-            return `${mins}m ${secs}s`;
-        },
-
-        formatTime(timestamp) {
-            const date = new Date(timestamp);
-            return date.toLocaleTimeString();
+        getPassRateBadgeClass(rate) {
+            if (rate >= 90) return 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300';
+            if (rate >= 50) return 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300';
+            return 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300';
         }
     }
 }

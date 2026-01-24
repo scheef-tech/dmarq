@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.api_v1.endpoints import domains, health, reports, setup, imap, stats, webhook, backfill
+from app.api.api_v1.endpoints import domains, health, reports, setup, imap, stats, webhook, backfill, sync, sources
 
 api_router = APIRouter()
 
@@ -13,3 +13,5 @@ api_router.include_router(imap.router, prefix="/imap", tags=["imap"])
 api_router.include_router(stats.router, prefix="/stats", tags=["stats"])
 api_router.include_router(webhook.router, prefix="/webhook", tags=["webhook"])
 api_router.include_router(backfill.router, prefix="/backfill", tags=["backfill"])
+api_router.include_router(sync.router, prefix="/sync", tags=["sync"])
+api_router.include_router(sources.router, prefix="/sources", tags=["sources"])

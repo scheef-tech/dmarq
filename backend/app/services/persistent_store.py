@@ -11,6 +11,7 @@ from app.core.database import SessionLocal, engine, Base
 from app.models.user import User  # Import User first for foreign key dependency
 from app.models.domain import Domain
 from app.models.report import DMARCReport, ReportRecord
+from app.models.datasource import DataSource, DataSourceLog  # Multi-source support
 
 
 class PersistentReportStore:
@@ -252,6 +253,59 @@ class PersistentReportStore:
                 }
                 for s in sources
             ]
+        finally:
+            db.close()
+
+    def get_report_by_id(self, report_id: str) -> Dict[str, Any]:
+        """Get a single report with all its records by report_id"""
+        db = self._get_db()
+        try:
+            report = db.query(DMARCReport).filter(DMARCReport.report_id == report_id).first()
+            if not report:
+                return {}
+
+            # Get domain name
+            domain = db.query(Domain).filter(Domain.id == report.domain_id).first()
+            domain_name = domain.name if domain else "unknown"
+
+            # Get all records for this report
+            records = db.query(ReportRecord).filter(ReportRecord.report_id == report.id).all()
+
+            # Calculate stats
+            total_count = sum(r.count for r in records)
+            passed_count = sum(r.count for r in records if r.dkim == 'pass' or r.spf == 'pass')
+            failed_count = total_count - passed_count
+            pass_rate = round((passed_count / total_count) * 100, 1) if total_count > 0 else 0
+
+            return {
+                "report_id": report.report_id,
+                "domain": domain_name,
+                "org_name": report.org_name,
+                "begin_date": report.begin_date,
+                "end_date": report.end_date,
+                "policy": report.policy,
+                "subdomain_policy": report.subdomain_policy,
+                "adkim": report.adkim,
+                "aspf": report.aspf,
+                "percentage": report.percentage,
+                "processed_at": report.processed_at.isoformat() if report.processed_at else None,
+                "total_count": total_count,
+                "passed_count": passed_count,
+                "failed_count": failed_count,
+                "pass_rate": pass_rate,
+                "records": [
+                    {
+                        "source_ip": r.source_ip,
+                        "count": r.count,
+                        "disposition": r.disposition,
+                        "dkim": r.dkim,
+                        "spf": r.spf,
+                        "header_from": r.header_from,
+                        "envelope_from": r.envelope_from
+                    }
+                    for r in records
+                ]
+            }
         finally:
             db.close()
 

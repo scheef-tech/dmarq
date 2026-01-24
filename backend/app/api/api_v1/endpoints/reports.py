@@ -1,4 +1,4 @@
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from pydantic import BaseModel
 
@@ -40,6 +40,35 @@ class PaginatedReportResponse(BaseModel):
     page_size: int
     total_pages: int
     reports: List[ReportSummary]
+
+class ReportRecordDetail(BaseModel):
+    """Individual record within a report"""
+    source_ip: str
+    count: int
+    disposition: str
+    dkim: Optional[str] = None
+    spf: Optional[str] = None
+    header_from: Optional[str] = None
+    envelope_from: Optional[str] = None
+
+class ReportDetailResponse(BaseModel):
+    """Full report detail response model"""
+    report_id: str
+    domain: str
+    org_name: str
+    begin_date: int
+    end_date: int
+    policy: Optional[str] = None
+    subdomain_policy: Optional[str] = None
+    adkim: Optional[str] = None
+    aspf: Optional[str] = None
+    percentage: Optional[int] = None
+    processed_at: Optional[str] = None
+    total_count: int
+    passed_count: int
+    failed_count: int
+    pass_rate: float
+    records: List[ReportRecordDetail]
 
 @router.post("/upload", response_model=UploadResponse)
 async def upload_report(file: UploadFile = File(...)):
@@ -211,4 +240,49 @@ async def get_domain_reports_paginated(
         page_size=page_size,
         total_pages=total_pages,
         reports=report_entries
+    )
+
+
+@router.get("/{report_id}", response_model=ReportDetailResponse)
+async def get_report_detail(report_id: str):
+    """
+    Get detailed information for a specific report by its report_id
+    """
+    store = ReportStore.get_instance()
+    report = store.get_report_by_id(report_id)
+
+    if not report:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Report with ID {report_id} not found"
+        )
+
+    return ReportDetailResponse(
+        report_id=report.get("report_id", ""),
+        domain=report.get("domain", "unknown"),
+        org_name=report.get("org_name", ""),
+        begin_date=report.get("begin_date", 0),
+        end_date=report.get("end_date", 0),
+        policy=report.get("policy"),
+        subdomain_policy=report.get("subdomain_policy"),
+        adkim=report.get("adkim"),
+        aspf=report.get("aspf"),
+        percentage=report.get("percentage"),
+        processed_at=report.get("processed_at"),
+        total_count=report.get("total_count", 0),
+        passed_count=report.get("passed_count", 0),
+        failed_count=report.get("failed_count", 0),
+        pass_rate=report.get("pass_rate", 0),
+        records=[
+            ReportRecordDetail(
+                source_ip=r.get("source_ip", ""),
+                count=r.get("count", 0),
+                disposition=r.get("disposition", "none"),
+                dkim=r.get("dkim"),
+                spf=r.get("spf"),
+                header_from=r.get("header_from"),
+                envelope_from=r.get("envelope_from")
+            )
+            for r in report.get("records", [])
+        ]
     )

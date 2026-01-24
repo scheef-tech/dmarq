@@ -38,3 +38,69 @@ def get_password_hash(password: str) -> str:
     Hash a password
     """
     return pwd_context.hash(password)
+
+
+# ============================================================================
+# Configuration Encryption for DataSource credentials
+# ============================================================================
+
+import base64
+import json
+import hashlib
+from cryptography.fernet import Fernet
+
+
+def _get_encryption_key() -> bytes:
+    """
+    Derive a Fernet-compatible encryption key from the application's SECRET_KEY.
+
+    Fernet requires a 32-byte base64-encoded key. We use SHA256 to derive
+    a consistent key from the SECRET_KEY regardless of its length.
+    """
+    # Use SHA256 to get a consistent 32-byte key from SECRET_KEY
+    key_bytes = hashlib.sha256(settings.SECRET_KEY.encode()).digest()
+    # Fernet needs the key to be base64-encoded
+    return base64.urlsafe_b64encode(key_bytes)
+
+
+def encrypt_config(config: dict) -> str:
+    """
+    Encrypt a configuration dictionary for secure storage.
+
+    Args:
+        config: Dictionary containing sensitive configuration data
+
+    Returns:
+        Encrypted string that can be stored in the database
+
+    Example:
+        >>> config = {"server": "mail.example.com", "password": "secret"}
+        >>> encrypted = encrypt_config(config)
+        >>> # Store encrypted in database
+    """
+    fernet = Fernet(_get_encryption_key())
+    config_json = json.dumps(config)
+    encrypted_bytes = fernet.encrypt(config_json.encode())
+    return encrypted_bytes.decode()
+
+
+def decrypt_config(encrypted_config: str) -> dict:
+    """
+    Decrypt an encrypted configuration string.
+
+    Args:
+        encrypted_config: Encrypted string from the database
+
+    Returns:
+        Decrypted configuration dictionary
+
+    Raises:
+        InvalidToken: If decryption fails (wrong key or corrupted data)
+
+    Example:
+        >>> config = decrypt_config(encrypted_string)
+        >>> password = config.get("password")
+    """
+    fernet = Fernet(_get_encryption_key())
+    decrypted_bytes = fernet.decrypt(encrypted_config.encode())
+    return json.loads(decrypted_bytes.decode())
