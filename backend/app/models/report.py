@@ -37,14 +37,10 @@ class DMARCReport(Base):
     domain = relationship("Domain", back_populates="reports")
     records = relationship("ReportRecord", back_populates="report", cascade="all, delete-orphan")
     
-    # Indexes for common queries
+    # Composite index for domain and date range queries (common dashboard queries)
+    # Note: Single-column indexes use index=True on Column definitions above
     __table_args__ = (
-        # Composite index for domain and date range queries (common dashboard queries)
         Index('ix_dmarc_reports_domain_dates', 'domain_id', 'begin_date', 'end_date'),
-        # Index for finding reports by policy
-        Index('ix_dmarc_reports_policy', 'policy'),
-        # Index for finding recent reports (dashboard statistics)
-        Index('ix_dmarc_reports_processed', 'processed_at'),
     )
     
     def __repr__(self):
@@ -79,12 +75,11 @@ class ReportRecord(Base):
     # Relationships
     report = relationship("DMARCReport", back_populates="records")
     
-    # Indexes for common queries
+    # Composite indexes for common queries
+    # Note: Single-column indexes use index=True on Column definitions above
     __table_args__ = (
-        # Composite index for source IP and evaluation results (for filtering)
         Index('ix_report_records_source_auth', 'source_ip', 'dkim', 'spf'),
-        # Composite index for disposition and count (for statistics)
-        Index('ix_report_records_disposition', 'disposition', 'count'),
+        Index('ix_report_records_disp_count', 'disposition', 'count'),
     )
     
     def __repr__(self):

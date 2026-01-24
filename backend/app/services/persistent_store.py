@@ -5,7 +5,7 @@ Replaces in-memory ReportStore with PostgreSQL storage
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, case
 
 from app.core.database import SessionLocal, engine, Base
 from app.models.user import User  # Import User first for foreign key dependency
@@ -127,8 +127,8 @@ class PersistentReportStore:
             stats = db.query(
                 func.sum(ReportRecord.count).label('total'),
                 func.sum(
-                    func.case(
-                        (((ReportRecord.dkim == 'pass') | (ReportRecord.spf == 'pass')), ReportRecord.count),
+                    case(
+                        ((ReportRecord.dkim == 'pass') | (ReportRecord.spf == 'pass'), ReportRecord.count),
                         else_=0
                     )
                 ).label('passed')
@@ -183,8 +183,8 @@ class PersistentReportStore:
                 stats = db.query(
                     func.sum(ReportRecord.count).label('total'),
                     func.sum(
-                        func.case(
-                            (((ReportRecord.dkim == 'pass') | (ReportRecord.spf == 'pass')), ReportRecord.count),
+                        case(
+                            ((ReportRecord.dkim == 'pass') | (ReportRecord.spf == 'pass'), ReportRecord.count),
                             else_=0
                         )
                     ).label('passed')

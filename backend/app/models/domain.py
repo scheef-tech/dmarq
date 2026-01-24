@@ -34,14 +34,10 @@ class Domain(Base):
     reports = relationship("DMARCReport", back_populates="domain", cascade="all, delete-orphan")
     user_domains = relationship("UserDomain", back_populates="domain", cascade="all, delete-orphan")
     
-    # Indexes for common queries
+    # Composite indexes for common queries
+    # Note: Single-column indexes use index=True on Column definitions above
     __table_args__ = (
-        # Index for finding active and verified domains
         Index('ix_domains_active_verified', 'active', 'verified'),
-        # Index for finding domains by policy
-        Index('ix_domains_policy', 'dmarc_policy'),
-        # Index for finding recently updated domains
-        Index('ix_domains_updated', 'updated_at'),
     )
     
     def __repr__(self):
