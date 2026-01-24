@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.core.database import SessionLocal, engine, Base
+from app.models.user import User  # Import User first for foreign key dependency
 from app.models.domain import Domain
 from app.models.report import DMARCReport, ReportRecord
 
