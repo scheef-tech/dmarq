@@ -194,14 +194,14 @@ async def upload_page(request: Request):
 
 # API endpoint to manually trigger IMAP polling
 @app.post("/api/v1/admin/trigger-poll")
-async def trigger_imap_poll(background_tasks: BackgroundTasks):
+async def trigger_imap_poll(background_tasks: BackgroundTasks, days: int = 9999):
     """Manually trigger IMAP polling (admin only)"""
     global last_check_time
-    
+
     try:
         # Create IMAP client and fetch reports
         imap_client = IMAPClient(delete_emails=False)
-        results = imap_client.fetch_reports(days=7)
+        results = imap_client.fetch_reports(days=days)
         
         # Update last check time
         last_check_time = datetime.now()
