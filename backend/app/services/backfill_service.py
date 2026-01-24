@@ -229,10 +229,12 @@ class BackfillService:
             # Search for DMARC emails in date range (server-side filtering)
             date_since = (datetime.now() - timedelta(days=days)).strftime("%d-%b-%Y")
 
-            # Filter for emails with "dmarc" in subject - server-side filtering
-            # This dramatically reduces the number of emails to download
+            # Search for both patterns:
+            # - Google: "Report domain:"
+            # - Microsoft: "DMARC Aggregate Report"
+            # IMAP OR syntax: OR criterion1 criterion2
             self._log("info", f"Searching for DMARC emails since {date_since}...")
-            status, data = mail.search(None, f'SINCE {date_since}', 'SUBJECT "dmarc"')
+            status, data = mail.search(None, f'SINCE {date_since}', 'OR SUBJECT "Report domain" SUBJECT "dmarc"')
 
             if status != 'OK':
                 raise Exception("Failed to search mailbox")
