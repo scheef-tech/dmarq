@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Header, Request
 from pydantic import BaseModel
 
 from app.services.dmarc_parser import DMARCParser
-from app.services.report_store import ReportStore
+from app.services.persistent_store import ReportStore
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)

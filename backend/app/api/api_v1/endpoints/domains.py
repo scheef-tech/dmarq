@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, status, Path, Query
 from pydantic import BaseModel
 
-from app.services.report_store import ReportStore
+from app.services.persistent_store import ReportStore
 
 router = APIRouter()
 

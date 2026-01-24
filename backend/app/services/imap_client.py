@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 from app.core.config import get_settings
 from app.services.dmarc_parser import DMARCParser
-from app.services.report_store import ReportStore
+from app.services.persistent_store import ReportStore
 
 # Setup logger
 logger = logging.getLogger(__name__)

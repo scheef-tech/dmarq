@@ -11,7 +11,7 @@ from datetime import datetime
 from app.api.api_v1.api import api_router
 from app.core.config import get_settings
 from app.services.imap_client import IMAPClient
-from app.services.report_store import ReportStore
+from app.services.persistent_store import ReportStore
 
 # Set up logging
 logger = logging.getLogger(__name__)

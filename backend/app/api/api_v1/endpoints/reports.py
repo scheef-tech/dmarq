@@ -3,7 +3,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from pydantic import BaseModel
 
 from app.services.dmarc_parser import DMARCParser
-from app.services.report_store import ReportStore
+from app.services.persistent_store import ReportStore
 
 router = APIRouter()
 
