@@ -226,12 +226,13 @@ class BackfillService:
             mail.login(settings.IMAP_USERNAME, settings.IMAP_PASSWORD)
             mail.select('INBOX')
 
-            # Search for emails in date range
+            # Search for DMARC emails in date range (server-side filtering)
             date_since = (datetime.now() - timedelta(days=days)).strftime("%d-%b-%Y")
-            search_criteria = f'(SINCE {date_since})'
 
-            self._log("info", f"Searching for emails since {date_since}...")
-            status, data = mail.search(None, search_criteria)
+            # Filter for emails with "dmarc" in subject - server-side filtering
+            # This dramatically reduces the number of emails to download
+            self._log("info", f"Searching for DMARC emails since {date_since}...")
+            status, data = mail.search(None, f'SINCE {date_since}', 'SUBJECT "dmarc"')
 
             if status != 'OK':
                 raise Exception("Failed to search mailbox")
