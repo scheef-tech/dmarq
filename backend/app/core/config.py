@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     # Optional Cloudflare Integration
     CLOUDFLARE_API_TOKEN: Optional[str] = None
     CLOUDFLARE_ZONE_ID: Optional[str] = None
+
+    # Webhook Secret for Email Worker
+    WEBHOOK_SECRET: Optional[str] = None
     
     @validator("BACKEND_CORS_ORIGINS", pre=True)
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
