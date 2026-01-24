@@ -147,34 +147,126 @@
         {% endcall %}
     </div>
     
-    <!-- IMAP Status -->
-    <div>
+    <!-- Backfill Manager -->
+    <div class="lg:col-span-2" x-data="backfillManager()">
         {% call card() %}
             {% call card_header() %}
                 <div class="flex items-center justify-between">
-                    {% call card_title() %}IMAP Integration Status{% endcall %}
-                    {% call button_link(href="/api/v1/admin/trigger-poll", variant="outline", size="sm") %}
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><path d="m3 2 2 4h8L7 14h2l-4 8 1-6H4l2-8H3z"></path></svg>
-                        Trigger Poll Now
-                    {% endcall %}
+                    {% call card_title() %}Email Backfill Manager{% endcall %}
+                    <div class="flex items-center gap-2">
+                        <span class="text-sm text-muted-foreground" x-text="'Mailbox: ' + mailbox"></span>
+                    </div>
                 </div>
             {% endcall %}
             {% call card_content() %}
-                <div class="flex flex-col gap-4">
-                    <div class="flex items-center">
-                        <span class="w-40 text-sm text-muted-foreground">Status:</span>
-                        <span class="inline-flex items-center gap-1.5">
-                            <span id="imap-status-icon" class="h-2.5 w-2.5 rounded-full bg-green-500"></span>
-                            <span id="imap-status-text">Running</span>
-                        </span>
+                <!-- Progress Section -->
+                <div class="space-y-4">
+                    <!-- Status and Controls -->
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <span class="inline-flex items-center gap-1.5">
+                                <span class="h-2.5 w-2.5 rounded-full"
+                                      :class="{
+                                          'bg-green-500 animate-pulse': state.status === 'running',
+                                          'bg-yellow-500': state.status === 'paused',
+                                          'bg-blue-500': state.status === 'completed',
+                                          'bg-red-500': state.status === 'error',
+                                          'bg-gray-400': state.status === 'idle'
+                                      }"></span>
+                                <span class="font-medium capitalize" x-text="state.status"></span>
+                            </span>
+                            <span class="text-sm text-muted-foreground" x-show="state.status === 'running'" x-text="state.current_email"></span>
+                        </div>
+                        <div class="flex gap-2">
+                            <button @click="startBackfill()"
+                                    :disabled="state.status === 'running'"
+                                    class="btn btn-sm btn-primary"
+                                    :class="{'opacity-50 cursor-not-allowed': state.status === 'running'}">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mr-1"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                                Start
+                            </button>
+                            <button @click="stopBackfill()"
+                                    :disabled="state.status !== 'running'"
+                                    class="btn btn-sm btn-outline"
+                                    :class="{'opacity-50 cursor-not-allowed': state.status !== 'running'}">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mr-1"><rect x="6" y="6" width="12" height="12"></rect></svg>
+                                Stop
+                            </button>
+                        </div>
                     </div>
-                    <div class="flex items-center">
-                        <span class="w-40 text-sm text-muted-foreground">Last Check:</span>
-                        <span id="imap-last-check">Never</span>
+
+                    <!-- Progress Bar -->
+                    <div class="space-y-2">
+                        <div class="flex justify-between text-sm">
+                            <span x-text="`${state.processed_emails + state.skipped_emails} / ${state.total_emails} emails`"></span>
+                            <span x-text="`${state.progress_percent || 0}%`"></span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-3 dark:bg-gray-700 overflow-hidden">
+                            <div class="h-3 rounded-full transition-all duration-300 flex"
+                                 :style="`width: ${state.progress_percent || 0}%`">
+                                <div class="bg-blue-500 h-full" :style="`width: ${state.total_emails > 0 ? (state.processed_emails / state.total_emails * 100) : 0}%`"></div>
+                                <div class="bg-gray-400 h-full" :style="`width: ${state.total_emails > 0 ? (state.skipped_emails / state.total_emails * 100) : 0}%`"></div>
+                            </div>
+                        </div>
+                        <div class="flex justify-between text-xs text-muted-foreground">
+                            <span>
+                                <span class="inline-block w-2 h-2 rounded bg-blue-500 mr-1"></span>New: <span x-text="state.processed_emails"></span>
+                                <span class="inline-block w-2 h-2 rounded bg-gray-400 ml-2 mr-1"></span>Skipped: <span x-text="state.skipped_emails"></span>
+                            </span>
+                            <span x-show="state.rate > 0" x-text="`${state.rate} emails/sec`"></span>
+                        </div>
                     </div>
-                    <div class="flex items-center">
-                        <span class="w-40 text-sm text-muted-foreground">Mailbox:</span>
-                        <span id="imap-mailbox">dmarc-reports@hosterra.net</span>
+
+                    <!-- Stats Grid -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 pt-2">
+                        <div class="text-center p-3 bg-muted/50 rounded-lg">
+                            <div class="text-2xl font-bold text-green-600" x-text="state.reports_found"></div>
+                            <div class="text-xs text-muted-foreground">Reports Found</div>
+                        </div>
+                        <div class="text-center p-3 bg-muted/50 rounded-lg">
+                            <div class="text-2xl font-bold text-blue-600" x-text="state.domains_found?.length || 0"></div>
+                            <div class="text-xs text-muted-foreground">Domains</div>
+                        </div>
+                        <div class="text-center p-3 bg-muted/50 rounded-lg">
+                            <div class="text-2xl font-bold text-orange-600" x-text="state.errors"></div>
+                            <div class="text-xs text-muted-foreground">Errors</div>
+                        </div>
+                        <div class="text-center p-3 bg-muted/50 rounded-lg">
+                            <div class="text-2xl font-bold" x-text="formatEta(state.eta_seconds)"></div>
+                            <div class="text-xs text-muted-foreground">ETA</div>
+                        </div>
+                    </div>
+
+                    <!-- Domains Found -->
+                    <div x-show="state.domains_found?.length > 0" class="pt-2">
+                        <div class="text-sm font-medium mb-2">Domains Found:</div>
+                        <div class="flex flex-wrap gap-1">
+                            <template x-for="domain in state.domains_found" :key="domain">
+                                <span class="px-2 py-1 bg-primary/10 text-primary rounded text-xs" x-text="domain"></span>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- Log Viewer -->
+                    <div class="pt-2">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="text-sm font-medium">Activity Log</div>
+                            <button @click="clearLogs()" class="text-xs text-muted-foreground hover:text-foreground">Clear</button>
+                        </div>
+                        <div class="bg-black/90 text-green-400 font-mono text-xs rounded-lg p-3 h-40 overflow-y-auto" id="backfill-log">
+                            <template x-for="log in logs" :key="log.id">
+                                <div class="py-0.5" :class="{
+                                    'text-green-400': log.level === 'success',
+                                    'text-blue-400': log.level === 'info',
+                                    'text-yellow-400': log.level === 'warning',
+                                    'text-red-400': log.level === 'error'
+                                }">
+                                    <span class="text-gray-500" x-text="formatTime(log.timestamp)"></span>
+                                    <span x-text="log.message"></span>
+                                </div>
+                            </template>
+                            <div x-show="logs.length === 0" class="text-gray-500">No log entries yet. Start a backfill to see activity.</div>
+                        </div>
                     </div>
                 </div>
             {% endcall %}
@@ -201,11 +293,12 @@ function dashboardApp() {
             try {
                 const response = await fetch('/api/v1/admin/poll-status');
                 const data = await response.json();
-                
+
                 const statusIcon = document.getElementById('imap-status-icon');
                 const statusText = document.getElementById('imap-status-text');
                 const lastCheck = document.getElementById('imap-last-check');
-                
+                const mailbox = document.getElementById('imap-mailbox');
+
                 if (data.is_running) {
                     statusIcon.classList.remove('bg-red-500');
                     statusIcon.classList.add('bg-green-500');
@@ -215,11 +308,17 @@ function dashboardApp() {
                     statusIcon.classList.add('bg-red-500');
                     statusText.textContent = 'Stopped';
                 }
-                
+
                 if (data.last_check) {
                     lastCheck.textContent = new Date(data.last_check).toLocaleString();
                 } else {
                     lastCheck.textContent = 'Never';
+                }
+
+                if (data.mailbox) {
+                    mailbox.textContent = data.mailbox;
+                } else {
+                    mailbox.textContent = 'Not configured';
                 }
             } catch (error) {
                 console.error('Error checking IMAP status:', error);
@@ -292,6 +391,129 @@ function dashboardApp() {
                 
                 tableBody.appendChild(row);
             });
+        }
+    }
+}
+
+function backfillManager() {
+    return {
+        state: {
+            status: 'idle',
+            total_emails: 0,
+            processed_emails: 0,
+            skipped_emails: 0,
+            reports_found: 0,
+            domains_found: [],
+            errors: 0,
+            progress_percent: 0,
+            rate: 0,
+            eta_seconds: null,
+            current_email: ''
+        },
+        logs: [],
+        mailbox: 'Loading...',
+        pollInterval: null,
+
+        init() {
+            this.fetchStatus();
+            this.fetchLogs();
+            this.fetchMailbox();
+            // Poll for updates every 2 seconds
+            this.pollInterval = setInterval(() => {
+                this.fetchStatus();
+                if (this.state.status === 'running') {
+                    this.fetchLogs();
+                }
+            }, 2000);
+        },
+
+        destroy() {
+            if (this.pollInterval) {
+                clearInterval(this.pollInterval);
+            }
+        },
+
+        async fetchMailbox() {
+            try {
+                const response = await fetch('/api/v1/admin/poll-status');
+                const data = await response.json();
+                this.mailbox = data.mailbox || 'Not configured';
+            } catch (error) {
+                console.error('Error fetching mailbox:', error);
+            }
+        },
+
+        async fetchStatus() {
+            try {
+                const response = await fetch('/api/v1/backfill/status');
+                const data = await response.json();
+                this.state = data;
+            } catch (error) {
+                console.error('Error fetching backfill status:', error);
+            }
+        },
+
+        async fetchLogs() {
+            try {
+                const response = await fetch('/api/v1/backfill/logs?limit=50');
+                const data = await response.json();
+                this.logs = data.logs || [];
+                // Auto-scroll log to bottom
+                this.$nextTick(() => {
+                    const logDiv = document.getElementById('backfill-log');
+                    if (logDiv) logDiv.scrollTop = logDiv.scrollHeight;
+                });
+            } catch (error) {
+                console.error('Error fetching logs:', error);
+            }
+        },
+
+        async startBackfill() {
+            try {
+                const response = await fetch('/api/v1/backfill/start', { method: 'POST' });
+                const data = await response.json();
+                if (data.success) {
+                    this.fetchStatus();
+                    this.fetchLogs();
+                }
+            } catch (error) {
+                console.error('Error starting backfill:', error);
+            }
+        },
+
+        async stopBackfill() {
+            try {
+                const response = await fetch('/api/v1/backfill/stop', { method: 'POST' });
+                await response.json();
+                this.fetchStatus();
+            } catch (error) {
+                console.error('Error stopping backfill:', error);
+            }
+        },
+
+        async clearLogs() {
+            try {
+                await fetch('/api/v1/backfill/logs/clear', { method: 'POST' });
+                this.logs = [];
+            } catch (error) {
+                console.error('Error clearing logs:', error);
+            }
+        },
+
+        formatEta(seconds) {
+            if (!seconds || seconds <= 0) return '--:--';
+            const hours = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            const secs = seconds % 60;
+            if (hours > 0) {
+                return `${hours}h ${mins}m`;
+            }
+            return `${mins}m ${secs}s`;
+        },
+
+        formatTime(timestamp) {
+            const date = new Date(timestamp);
+            return date.toLocaleTimeString();
         }
     }
 }

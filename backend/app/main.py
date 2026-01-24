@@ -24,42 +24,50 @@ last_check_time = None
 
 
 async def scheduled_imap_polling():
-    """Background task for periodically checking IMAP for new DMARC reports"""
+    """
+    Background task for periodically checking IMAP for NEW DMARC reports.
+
+    Note: This only checks recent emails (last 7 days) for ongoing monitoring.
+    For historical backfill, use the Backfill Manager UI at /api/v1/backfill/start
+    which has progress tracking and resume capability.
+    """
     global last_check_time
 
     try:
         # How often to check for emails (in seconds)
         check_interval = 3600  # Default: 1 hour
+        # Only check recent emails for ongoing monitoring (not full backfill)
+        days_to_check = 7
 
         while True:
-            logger.info("Starting scheduled IMAP polling for DMARC reports")
+            logger.info(f"Starting scheduled IMAP polling for last {days_to_check} days")
 
             try:
                 # Create IMAP client and fetch reports
                 # Run in thread pool to avoid blocking the event loop
                 imap_client = IMAPClient(delete_emails=False)
-                results = await asyncio.to_thread(imap_client.fetch_reports, days=9999)
-                
+                results = await asyncio.to_thread(imap_client.fetch_reports, days=days_to_check)
+
                 # Update last check time
                 last_check_time = datetime.now()
-                
+
                 if results["success"]:
                     logger.info(f"IMAP polling completed: {results['processed']} emails processed, "
                                 f"{results['reports_found']} reports found")
-                    
+
                     # If new domains were found, log them
                     if results["new_domains"]:
                         logger.info(f"New domains found: {', '.join(results['new_domains'])}")
-                    
+
                 else:
                     logger.error(f"IMAP polling failed: {results.get('error', 'Unknown error')}")
-                
+
             except Exception as e:
                 logger.error(f"Error in IMAP polling task: {str(e)}")
-            
+
             # Wait for the next check interval
             await asyncio.sleep(check_interval)
-            
+
     except asyncio.CancelledError:
         logger.info("IMAP polling task cancelled")
 
@@ -226,8 +234,9 @@ async def trigger_imap_poll(background_tasks: BackgroundTasks, days: int = 9999)
 async def get_poll_status():
     """Get the status of IMAP polling"""
     global last_check_time
-    
+
     return {
         "is_running": background_task is not None and not background_task.done(),
-        "last_check": last_check_time.isoformat() if last_check_time else None
+        "last_check": last_check_time.isoformat() if last_check_time else None,
+        "mailbox": settings.IMAP_USERNAME
     }
