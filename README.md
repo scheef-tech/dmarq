@@ -1,5 +1,8 @@
 # DMARQ
 
+![Commit Activity](assets/commit-heatmap.svg)
+
+
 **DMARQ** is a modern, privacy-conscious DMARC monitoring and analysis platform built for professionals who want deep visibility into their email authentication posture — without giving up control or relying on third-party SaaS providers.
 
 🌐 [Live Demo (soon)](https://app.dmarq.org)  
