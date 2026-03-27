@@ -1,0 +1,3 @@
+[install.scopes]
+"@scheef-tech" = { token = "$ST_REGISTRY_TOKEN", url = "https://npm.pkg.github.com" }
+
